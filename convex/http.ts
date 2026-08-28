@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { components } from "./_generated/api";
 import { auth } from "./auth";
+import { agentmail, amCtx } from "./email";
 
 const http = httpRouter();
 
@@ -17,15 +18,26 @@ auth.addHttpRoutes(http);
 //   https://<deployment>.convex.site/agentmail/webhook
 // and copy the signing secret into AGENTMAIL_WEBHOOK_SECRET.
 //
-// STUB: delegates to `agentmail.handleWebhook(ctx, req)` once the client is
-// constructed in convex/email.ts with its `onMessageReceived` callback.
+// The component verifies the Svix signature, dedupes by event id, and
+// dispatches to the two callbacks configured on the client in convex/email.ts:
+//   onMessageReceived -> a facility replied
+//   onEvent           -> delivered, bounced, rejected
 http.route({
   path: "/agentmail/webhook",
   method: "POST",
-  handler: httpAction(async (_ctx, _req) => {
+  // `amCtx` bridges the component's Convex-version type skew; see convex/email.ts.
+  handler: httpAction(async (ctx, req) => agentmail.handleWebhook(amCtx(ctx), req)),
+});
+
+// Health probe, so the mount can be confirmed from a browser before the
+// webhook is registered in the AgentMail dashboard.
+http.route({
+  path: "/agentmail/health",
+  method: "GET",
+  handler: httpAction(async () => {
     return new Response(
-      JSON.stringify({ ok: false, error: "AgentMail webhook not wired yet" }),
-      { status: 501, headers: { "content-type": "application/json" } },
+      JSON.stringify({ ok: true, mount: "/agentmail/webhook" }),
+      { status: 200, headers: { "content-type": "application/json" } },
     );
   }),
 });
