@@ -1,0 +1,38 @@
+{
+  "name": "ombuds",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
+    "dev:frontend": "vite",
+    "dev:backend": "convex dev",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "deploy": "npx @convex-dev/static-hosting deploy"
+  },
+  "dependencies": {
+    "@agentmail/convex": "^0.1.0",
+    "@auth/core": "^0.41.3",
+    "@convex-dev/agent": "^0.7.1",
+    "@convex-dev/auth": "^0.0.95",
+    "@convex-dev/static-hosting": "^0.2.1",
+    "@convex-dev/workpool": "^0.4.10",
+    "@firecrawl/firecrawl-convex": "^0.1.1",
+    "convex": "^1.45.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.0",
+    "npm-run-all": "^4.1.5",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

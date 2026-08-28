@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/*
+ * Calm, serious, high-contrast. Government-clarity, not AI-demo neon.
+ * Red is reserved exclusively for harm severity — never decoration.
+ * See CLAUDE.md section 8.
+ */
+@theme {
+  --color-ink: #14171a;
+  --color-ink-muted: #5b6570;
+  --color-paper: #ffffff;
+  --color-paper-sunk: #f4f5f7;
+  --color-rule: #d8dce1;
+
+  /* Harm severity only. */
+  --color-harm: #b3241c;
+  --color-harm-soft: #fdf0ef;
+  --color-jeopardy: #7a1410;
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    @apply bg-white text-[#14171a] antialiased;
+    font-size: 16px; /* 16px minimum body — this audience is 45-65. */
+  }
+  @media (prefers-color-scheme: dark) {
+    body {
+      @apply bg-[#101315] text-[#e8ebee];
+    }
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-current;
+  }
+}
