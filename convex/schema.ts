@@ -89,6 +89,38 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_tag_severity", ["tag", "scopeSeverity"]),
 
+  // Full, untruncated citation text. The `deficiency_description` on a citation
+  // row is truncated mid-sentence ("...prevent acc"), so ingest joins to the CMS
+  // Citation Code Look-up (dataset tagd-9999, 643 rows) for the real wording.
+  // Cheap, static, and shared by every facility — no LLM involved.
+  tagCatalog: defineTable({
+    tag: v.string(), // "F0689"
+    prefix: v.string(), // "F"
+    number: v.string(), // "0689"
+    description: v.string(), // full CMS text
+    category: v.string(), // "Quality of Life and Care Deficiencies"
+  }).index("by_tag", ["tag"]),
+
+  // Per-facility risk summary. Unlike tagTranslations this cannot be shared
+  // between facilities — it describes one facility's pattern over time — so it
+  // is cached per CCN and regenerated only when the citation history changes.
+  // Generated LAZILY on facility view, never during ingest (CLAUDE.md s10).
+  facilityRiskSummaries: defineTable({
+    ccn: v.string(),
+    summary: v.string(), // 2-3 sentences about the pattern, not a list
+    pattern: v.union(
+      v.literal("clean"),
+      v.literal("isolated_incident"),
+      v.literal("improving"),
+      v.literal("recurring"),
+      v.literal("severe_recurring"),
+    ),
+    citationCount: v.number(), // basis: how many citations it was written from
+    latestSurveyDate: v.number(), // basis: newest survey it saw
+    model: v.string(), // provenance — which model wrote it
+    createdAt: v.number(),
+  }).index("by_ccn", ["ccn"]),
+
   penalties: defineTable({
     ccn: v.string(),
     date: v.number(),
