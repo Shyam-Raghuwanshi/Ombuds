@@ -12,6 +12,10 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    // src/ imports convex/_generated/api, which pulls the Convex modules into
+    // this project. Those read process.env, so the app project needs the Node
+    // types too even though nothing in src/ touches Node itself.
+    "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

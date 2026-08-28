@@ -10,10 +10,14 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "deploy": "npx @convex-dev/static-hosting deploy"
+    "deploy": "npx @convex-dev/static-hosting deploy",
+    "fixtures": "node --experimental-strip-types --no-warnings scripts/run-fixtures.mjs",
+    "seed:demo": "npx convex run cms:syncTagCatalog '{}' && for c in 055016 055085 056487; do npx convex run cms:ingestFacilityByCcn \"{\\\"ccn\\\":\\\"$c\\\"}\"; done"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",
+    "@ai-sdk/google": "^4.0.56",
+    "@ai-sdk/openai": "^4.0.50",
     "@auth/core": "^0.41.3",
     "@convex-dev/agent": "^0.7.1",
     "@convex-dev/auth": "^0.0.95",
@@ -22,7 +26,8 @@
     "@firecrawl/firecrawl-convex": "^0.1.1",
     "convex": "^1.45.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

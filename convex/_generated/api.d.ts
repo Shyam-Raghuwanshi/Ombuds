@@ -8,8 +8,14 @@
  * @module
  */
 
+import type * as ai_fixtures from "../ai/fixtures.js";
+import type * as ai_provider from "../ai/provider.js";
+import type * as ai_schemas from "../ai/schemas.js";
 import type * as auth from "../auth.js";
+import type * as cms from "../cms.js";
+import type * as deficiencies from "../deficiencies.js";
 import type * as http from "../http.js";
+import type * as lib_severity from "../lib/severity.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +24,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "ai/fixtures": typeof ai_fixtures;
+  "ai/provider": typeof ai_provider;
+  "ai/schemas": typeof ai_schemas;
   auth: typeof auth;
+  cms: typeof cms;
+  deficiencies: typeof deficiencies;
   http: typeof http;
+  "lib/severity": typeof lib_severity;
 }>;
 
 /**
