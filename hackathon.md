@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-28T09:27:24Z
+- **Last updated:** 2026-08-28T09:28:09Z
 
 ## Log
 
@@ -86,7 +86,7 @@ Blocked: the dev provider's API credits are exhausted and no OpenAI key is set
 on the deployment, so the translation and summary paths are deployed and
 verified up to the model call but have not yet produced real output.
 
-### 2026-08-28 - working tree
+### 2026-08-28 - 1fab767
 The federal record publishes a phone number for every one of the 14,690
 certified facilities and no website or email at all, so there is no path from a
 provider number to an inbox. Firecrawl now builds that path: search finds the
