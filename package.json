@@ -12,7 +12,8 @@
     "typecheck": "tsc -b",
     "deploy": "npx @convex-dev/static-hosting deploy",
     "fixtures": "node --experimental-strip-types --no-warnings scripts/run-fixtures.mjs",
-    "seed:demo": "npx convex run cms:syncTagCatalog '{}' && for c in 055016 055085 056487; do npx convex run cms:ingestFacilityByCcn \"{\\\"ccn\\\":\\\"$c\\\"}\"; done"
+    "seed:demo": "npx convex run cms:syncTagCatalog '{}' && for c in 055016 055085 056487; do npx convex run cms:ingestFacilityByCcn \"{\\\"ccn\\\":\\\"$c\\\"}\"; done",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",
@@ -36,6 +37,7 @@
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.0",
     "npm-run-all": "^4.1.5",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"

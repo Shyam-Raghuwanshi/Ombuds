@@ -13,15 +13,23 @@ import type * as ai_provider from "../ai/provider.js";
 import type * as ai_schemas from "../ai/schemas.js";
 import type * as auth from "../auth.js";
 import type * as cms from "../cms.js";
+import type * as crons from "../crons.js";
 import type * as deficiencies from "../deficiencies.js";
+import type * as demo from "../demo.js";
+import type * as email from "../email.js";
 import type * as enrichment from "../enrichment.js";
 import type * as http from "../http.js";
 import type * as lib_contact from "../lib/contact.js";
 import type * as lib_firecrawlErrors from "../lib/firecrawlErrors.js";
+import type * as lib_letter from "../lib/letter.js";
 import type * as lib_licensing from "../lib/licensing.js";
+import type * as lib_personas from "../lib/personas.js";
+import type * as lib_questions from "../lib/questions.js";
+import type * as lib_sendGuard from "../lib/sendGuard.js";
 import type * as lib_severity from "../lib/severity.js";
 import type * as licensing from "../licensing.js";
 import type * as news from "../news.js";
+import type * as searches from "../searches.js";
 
 import type {
   ApiFromModules,
@@ -35,15 +43,23 @@ declare const fullApi: ApiFromModules<{
   "ai/schemas": typeof ai_schemas;
   auth: typeof auth;
   cms: typeof cms;
+  crons: typeof crons;
   deficiencies: typeof deficiencies;
+  demo: typeof demo;
+  email: typeof email;
   enrichment: typeof enrichment;
   http: typeof http;
   "lib/contact": typeof lib_contact;
   "lib/firecrawlErrors": typeof lib_firecrawlErrors;
+  "lib/letter": typeof lib_letter;
   "lib/licensing": typeof lib_licensing;
+  "lib/personas": typeof lib_personas;
+  "lib/questions": typeof lib_questions;
+  "lib/sendGuard": typeof lib_sendGuard;
   "lib/severity": typeof lib_severity;
   licensing: typeof licensing;
   news: typeof news;
+  searches: typeof searches;
 }>;
 
 /**
