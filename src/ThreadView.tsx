@@ -1,0 +1,149 @@
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
+import { fmtTime } from "./board";
+
+/**
+ * The actual conversation, reactive.
+ *
+ * A family should be able to read exactly what was sent on their behalf and
+ * exactly what came back, in their own words, without taking anything on trust.
+ * That is also what makes the follow-up round legible: you can see the reply
+ * that dodged the question, and then the message that asked again.
+ */
+
+function Message({
+  message,
+}: {
+  message: {
+    id: string;
+    direction: string;
+    round: number;
+    subject: string;
+    body: string;
+    fromAddress: string;
+    simulated: boolean;
+    model: string | null;
+    persona: string | null;
+    createdAt: number;
+  };
+}) {
+  const outbound = message.direction === "outbound";
+  return (
+    <li
+      className={`rounded border p-4 ${
+        outbound
+          ? "border-[#d8dce1] dark:border-[#2b3236]"
+          : "border-[#d8dce1] bg-[#f4f5f7] dark:border-[#2b3236] dark:bg-[#171b1e]"
+      }`}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-[14px] font-semibold">
+          {outbound ? "The family" : message.fromAddress || "The facility"}
+        </span>
+        <span className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          {fmtTime(message.createdAt)} · round {message.round}
+        </span>
+        {message.simulated && (
+          <span className="rounded border border-[#d8dce1] px-1.5 py-0.5 text-[12px] font-medium text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+            Simulated
+            {message.persona ? ` · ${message.persona.replace(/_/g, " ")}` : ""}
+          </span>
+        )}
+      </div>
+
+      {outbound && (
+        <p className="mt-1 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+          {message.subject}
+        </p>
+      )}
+
+      <pre className="mt-3 whitespace-pre-wrap font-sans text-[15px] leading-relaxed">
+        {message.body}
+      </pre>
+
+      {outbound && message.model && (
+        <p className="mt-3 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          Drafted by {message.model} in the family's words, from what they told
+          us they needed.
+        </p>
+      )}
+    </li>
+  );
+}
+
+export function ThreadView({
+  inquiryId,
+  onBack,
+}: {
+  inquiryId: Id<"inquiries">;
+  onBack: () => void;
+}) {
+  const thread = useQuery(api.email.thread, { inquiryId });
+
+  if (thread === undefined) {
+    return (
+      <p className="mx-auto max-w-3xl px-6 py-10 text-[#5b6570] dark:text-[#9aa4ad]">
+        Loading the conversation…
+      </p>
+    );
+  }
+  if (thread === null) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <button onClick={onBack} className="underline underline-offset-4">
+          Back to the board
+        </button>
+        <p className="mt-4 text-[#5b6570] dark:text-[#9aa4ad]">
+          That conversation is not available.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="mx-auto max-w-3xl px-6 py-8">
+      <button onClick={onBack} className="text-[15px] underline underline-offset-4">
+        Back to the board
+      </button>
+
+      <h2 className="mt-4 text-[22px] font-semibold">{thread.facilityName}</h2>
+      <p className="mt-1 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        {thread.inboxEmail} → {thread.toEmail}
+        {thread.deliveryStatus && ` · AgentMail: ${thread.deliveryStatus}`}
+      </p>
+
+      {thread.simulated && (
+        <p className="mt-3 rounded border border-[#d8dce1] p-3 text-[14px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+          This conversation is simulated. We do not send hackathon traffic to
+          real, understaffed nursing homes, so the inquiry was routed to an
+          inbox we control and answered by a seeded persona
+          {thread.persona ? ` (${thread.persona.replace(/_/g, " ")})` : ""}.
+          {thread.intendedTo &&
+            ` In live mode this would have gone to ${thread.intendedTo}.`}{" "}
+          Everything after the reply arrives — reading it, noticing what was
+          left out, writing back — is the same code that runs on a real reply.
+        </p>
+      )}
+
+      {thread.unanswered.length > 0 && (
+        <p className="mt-3 text-[15px]">
+          Still unanswered:{" "}
+          <span className="font-medium">{thread.unanswered.join(", ")}</span>
+        </p>
+      )}
+
+      {thread.messages.length === 0 ? (
+        <p className="mt-6 text-[#5b6570] dark:text-[#9aa4ad]">
+          Nothing has been sent yet.
+        </p>
+      ) : (
+        <ul className="mt-6 space-y-3">
+          {thread.messages.map((m) => (
+            <Message key={m.id} message={{ ...m, id: m.id as string }} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
