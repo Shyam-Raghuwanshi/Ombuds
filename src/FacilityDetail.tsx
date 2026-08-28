@@ -1,5 +1,8 @@
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { ContactPanel } from "./ContactPanel";
+import { NewsPanel } from "./NewsPanel";
+import { useDiscovery } from "./useDiscovery";
 import { useLazyTranslate } from "./useLazyTranslate";
 import {
   HARM_CHIP,
@@ -157,6 +160,10 @@ export function FacilityDetail({
   // Translation is triggered here — on view — and never during ingest.
   // The query above is reactive, so sentences appear in place as they land.
   useLazyTranslate(ccn, detail != null);
+  // Firecrawl contact discovery and the local-news scan start on the same
+  // event, for the same reason: neither is worth paying for until a family has
+  // actually opened the facility.
+  const { newsError } = useDiscovery(ccn, detail != null);
 
   if (detail === undefined) {
     return <p className="px-6 py-20 text-[#5b6570]">Loading the record…</p>;
@@ -231,6 +238,8 @@ export function FacilityDetail({
         {fmtDate(detail.latestSurveyDate)}.
       </Provenance>
 
+      <ContactPanel ccn={ccn} />
+
       <section className="mt-8">
         <h2 className="text-xl font-semibold">What the record shows over time</h2>
         {riskSummary ? (
@@ -271,6 +280,8 @@ export function FacilityDetail({
           </Provenance>
         )}
       </section>
+
+      <NewsPanel ccn={ccn} error={newsError} />
     </article>
   );
 }

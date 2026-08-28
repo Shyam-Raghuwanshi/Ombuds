@@ -1,4 +1,5 @@
-import { useQuery } from "convex/react";
+import { useEffect, useRef } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useLazyTranslate } from "./useLazyTranslate";
 import { HARM_CHIP, HARM_LABEL, PATTERN_LABEL, fmtDate, type HarmLevel } from "./severity";
@@ -152,6 +153,56 @@ function CacheLine() {
   );
 }
 
+/**
+ * How many of these facilities we can actually write to.
+ *
+ * The failures are on the board on purpose. Firecrawl finds a contact address
+ * for somewhere between half and three quarters of facilities — many homes have
+ * no website, or one with no address published on it — and a board that quietly
+ * listed only the reachable ones would be doing the same filtering as the
+ * referral service this product exists to argue against. A facility we cannot
+ * email keeps its place, its phone number, and its whole inspection record.
+ */
+function ReachLine({ ccns }: { ccns: string[] }) {
+  const status = useQuery(api.enrichment.enrichmentStatus, { ccns });
+  const enrichBatch = useMutation(api.enrichment.enrichBatch);
+  const started = useRef(false);
+
+  // Fanned out through a bounded workpool rather than fired all at once, so a
+  // fifteen-facility shortlist never becomes fifteen simultaneous requests.
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void enrichBatch({ ccns }).catch((e) =>
+      console.error("contact discovery could not be queued", e),
+    );
+  }, [ccns, enrichBatch]);
+
+  if (!status || status.total === 0) return null;
+  const settled = status.total - status.unstarted - status.pending;
+
+  return (
+    <p className="mt-2 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+      {settled < status.total ? (
+        <>Looking for a way to contact {status.total} facilities… </>
+      ) : (
+        <>
+          {status.discovered} of {status.total} reachable by email.{" "}
+        </>
+      )}
+      {status.noWebsite > 0 && <>{status.noWebsite} publish no website. </>}
+      {status.noEmail > 0 && (
+        <>{status.noEmail} have a website with no address on it. </>
+      )}
+      {status.failed > 0 && <>{status.failed} could not be checked. </>}
+      The federal record gives us a telephone number and nothing else, so every
+      address above was found on the open web. Facilities we could not reach stay
+      on the board with their inspection record.
+      {status.lastError ? ` ${status.lastError}` : ""}
+    </p>
+  );
+}
+
 export function Compare({ ccns }: { ccns: string[] }) {
   return (
     <section className="mx-auto max-w-7xl px-6 py-10">
@@ -165,6 +216,7 @@ export function Compare({ ccns }: { ccns: string[] }) {
         same record in plain English.
       </p>
       <CacheLine />
+      <ReachLine ccns={ccns} />
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         {ccns.map((ccn) => (
           <Column key={ccn} ccn={ccn} />

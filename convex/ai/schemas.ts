@@ -102,3 +102,69 @@ Rules, all of them absolute:
 - Never give medical, legal, or financial advice. Do not tell the reader whether to choose this facility.
 - Never use tag codes, severity letters, or the words "scope", "severity", "deficiency", "citation", or "survey". Say "inspection", "inspectors found", "the facility was cited for".
 - Never invent anything not present in the data you are given.`;
+
+/**
+ * Local news triage.
+ *
+ * The reason this schema leads with `isAboutThisFacility` rather than a concern
+ * level: nursing home names repeat across the country, chains share a brand
+ * across dozens of buildings, and the failure mode we must not have is
+ * attributing another home's lawsuit to this one. A story we are not confident
+ * about is dropped, not downgraded.
+ */
+export const newsTriageSchema = z.object({
+  items: z.array(
+    z.object({
+      index: z
+        .number()
+        .int()
+        .describe("The index number of the search result being judged."),
+      isAboutThisFacility: z
+        .boolean()
+        .describe(
+          "True only if this story is about the specific facility named, at " +
+            "that address or city. False for a different location of the same " +
+            "chain, a different facility with a similar name, a directory " +
+            "listing, a marketing page, an obituary, or a job advert.",
+        ),
+      concernLevel: z
+        .enum(["informational", "concerning", "serious"])
+        .describe(
+          "informational: ownership change, expansion, renovation, an award, a " +
+            "routine local mention. " +
+            "concerning: a state citation, a fine, a complaint investigation, a " +
+            "staffing shortage, a licence condition. " +
+            "serious: alleged abuse or neglect, a resident death, a lawsuit " +
+            "over care, a criminal charge, a closure, or a licence revocation.",
+        ),
+      whyItMatters: z
+        .string()
+        .describe(
+          "One sentence, under 30 words, saying what the story reports — " +
+            "attributed, e.g. 'The paper reports that...'. Report only what the " +
+            "headline and snippet say. Never state an allegation as fact, never " +
+            "add detail that is not in the snippet, and give no advice.",
+        ),
+      publishedYear: z
+        .number()
+        .int()
+        .nullable()
+        .describe("Four-digit year if the snippet states one, otherwise null."),
+    }),
+  ),
+});
+export type NewsTriage = z.infer<typeof newsTriageSchema>;
+
+export const FACILITY_NEWS_SYSTEM = `You triage local news search results about one United States senior care facility, for a family member choosing a care facility for their parent.
+
+The federal inspection record is months behind by the time it is published. Local reporting is not. Your job is to decide which of these search results are genuinely about the one facility named, and how serious each one is.
+
+The mistake that matters most is a false positive. Facility names repeat across the country, chains use one brand across dozens of buildings, and "Golden Living Center" exists in twenty states. Attributing another home's lawsuit to this one would be a serious harm to a real business and would mislead a family making a real decision. If you are not confident the story is about this exact facility, in this city, set isAboutThisFacility to false. Dropping a real story is a much smaller error than inventing one.
+
+Rules, all of them absolute:
+- Judge only from the title and snippet you are given. Never use outside knowledge about the facility or the chain.
+- Never state an allegation as established fact. Write "the paper reports", "the suit alleges", "inspectors were reported to have found".
+- Never give medical, legal, or financial advice, and never tell the reader what to conclude or what to do.
+- Never invent a date, a number, an outcome, or a detail that is not in the snippet.
+- A directory listing, a review aggregator page, a job advert, an obituary, a press release, and a marketing page are all not news. Set isAboutThisFacility to false for them.
+- Return exactly one item for every result you are given, using the index number it was given.`;

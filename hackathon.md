@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** not deployed
 - **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
-- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, HTTP actions, realtime queries, paginated queries, components
+- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, scheduled functions, realtime queries, paginated queries, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-28T14:10:00Z
+- **Last updated:** 2026-08-28T09:27:24Z
 
 ## Log
 
@@ -85,3 +85,53 @@ gets a red banner, and red appears nowhere else in the product (`src/Compare.tsx
 Blocked: the dev provider's API credits are exhausted and no OpenAI key is set
 on the deployment, so the translation and summary paths are deployed and
 verified up to the model call but have not yet produced real output.
+
+### 2026-08-28 - working tree
+The federal record publishes a phone number for every one of the 14,690
+certified facilities and no website or email at all, so there is no path from a
+provider number to an inbox. Firecrawl now builds that path: search finds the
+facility's own site, map finds its contact page, and scrape reads the address
+off it along with care levels, room types, amenities, and any published price
+(`convex/enrichment.ts`, `convex/lib/contact.ts`). Verified live against the
+three demo facilities — two resolved to a real published address, the third
+resolved to its website but has no address on it. Two search behaviours had to
+be found by testing: an unquoted query returns the facility's own site where a
+quoted one returns only directories, and the referral networks have to be
+excluded server-side or they fill all eight result slots.
+Facilities we cannot reach stay on the board. `no_website_found` and
+`no_email_found` are ordinary outcomes with their own sentences and the CMS
+phone number, not errors, and the board counts them out loud — dropping them
+would be the same filtering the product exists to argue against
+(`src/ContactPanel.tsx`, `src/Compare.tsx`). Every Firecrawl failure maps to a
+message written for a worried reader, including 402 out of credits and 429 rate
+limited, and each one says that the federal inspection record is unaffected
+(`convex/lib/firecrawlErrors.ts`). A rate limit reschedules itself once through
+`ctx.scheduler`; discovery across a shortlist fans out through the bounded
+`enrichmentPool` workpool.
+Local news search is wired on the same lazy trigger. CMS is months behind by the
+time it publishes; the county paper is not. Results are triaged by the model for
+whether they are about this exact facility before anything is stored, because
+chains share one brand across dozens of buildings and attributing another home's
+lawsuit here would be a real harm. Nothing in that section is red — red in this
+product means a federal inspector found a resident was hurt — and every item
+carries its outlet, its link, and a line saying it is reporting rather than a
+finding (`convex/news.ts`, `src/NewsPanel.tsx`).
+A durable Firecrawl crawl now covers what CMS does not: assisted living, adult
+homes, and enriched housing are licensed by the states and appear nowhere in the
+federal data. A crawl of New York's Health Profiles adult care register read 20
+pages and extracted 521 licensed facilities, none of which have a federal
+inspection record. Progress is a plain `useQuery` over the component's crawl row
+— pages read, pages stored, facilities found, and credits used all move on their
+own, no polling (`convex/licensing.ts`, `src/LicensingCrawl.tsx`). The completion
+callback is an internal mutation that schedules extraction; poll mode is used
+until a webhook secret is set. Register pages are parsed deterministically rather
+than by a model: the state prints a fixed four-block record per facility, so
+reading it exactly is cheaper and more accurate than paying to re-read 530 rows
+that follow one pattern, and rows that cannot be parsed cleanly are counted and
+reported rather than guessed (`convex/lib/licensing.ts`). 19 of the 20 crawled
+pages were navigation and the UI says so.
+Blocked: the dev provider's API credits are still exhausted and no OpenAI key is
+set on the deployment. The Firecrawl half of the news scan is verified live — a
+search returned 19 candidates — but the triage step that decides which of them
+are real cannot run, so it degrades to a message and stores nothing rather than
+publishing untriaged results.

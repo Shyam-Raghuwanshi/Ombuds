@@ -3,6 +3,7 @@ import { useConvexAuth } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Compare } from "./Compare";
 import { FacilityDetail } from "./FacilityDetail";
+import { LicensingCrawl } from "./LicensingCrawl";
 
 /**
  * Anonymous sign-in fires silently on mount, so a judge opening the live URL
@@ -63,6 +64,7 @@ export default function App() {
                 ))}
               </ul>
             </nav>
+            <LicensingCrawl />
           </>
         )}
       </main>

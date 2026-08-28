@@ -26,6 +26,7 @@ export type Provider = "openai" | "google";
 export type Task =
   | "deficiencyTranslation" // high volume, highly repetitive, cached by (tag, severity)
   | "facilityRiskSummary" // one call per facility ever viewed — reasoning over a whole history
+  | "facilityNewsScan" // deciding whether a news story is about THIS facility
   | "emailReplyParse" // messy human text, quality matters
   | "emailDraft" // a real family's voice
   | "facilityRanking"; // low volume, structured
@@ -33,6 +34,9 @@ export type Task =
 const TIER: Record<Task, "small" | "large"> = {
   deficiencyTranslation: "small",
   facilityRiskSummary: "large",
+  // Low volume — one call per facility — but the failure mode is attributing
+  // another home's lawsuit to this one. That is worth the better model.
+  facilityNewsScan: "large",
   emailReplyParse: "large",
   emailDraft: "large",
   facilityRanking: "small",
