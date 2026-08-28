@@ -168,3 +168,240 @@ Rules, all of them absolute:
 - Never invent a date, a number, an outcome, or a detail that is not in the snippet.
 - A directory listing, a review aggregator page, a job advert, an obituary, a press release, and a marketing page are all not news. Set isAboutThisFacility to false for them.
 - Return exactly one item for every result you are given, using the index number it was given.`;
+
+// =============================================================================
+// The email campaign
+// =============================================================================
+
+/**
+ * The letter a family sends to a facility.
+ *
+ * The model writes the whole thing in the family's voice — the opening that
+ * says who is writing and for whom, each of the five questions phrased around
+ * this family's budget and must-haves, and the sign-off. What it does NOT get
+ * to decide is which questions are asked: the five keys are fixed, exactly one
+ * of each, and a missing slot is filled from the canonical phrasing before the
+ * letter goes out (convex/lib/questions.ts). So the personalisation is real and
+ * the coverage is guaranteed.
+ */
+export const inquiryDraftSchema = z.object({
+  subject: z
+    .string()
+    .describe(
+      "A short, plain subject line a busy admissions coordinator will open. " +
+        "Six words at most. No marketing language, no exclamation marks, and " +
+        "never the facility's own name repeated back at them.",
+    ),
+  opening: z
+    .string()
+    .describe(
+      "One or two sentences. Who is writing, who they are looking for a place " +
+        "for, and roughly when. Warm and specific, never gushing. Do not thank " +
+        "them in advance, do not explain how you found them, and do not " +
+        "mention software, agents, automation, or artificial intelligence.",
+    ),
+  questions: z
+    .array(
+      z.object({
+        key: z
+          .enum(["opening", "cost", "waitlist", "staffing", "tour"])
+          .describe("Which of the five this question is. Use each key once."),
+        text: z
+          .string()
+          .describe(
+            "The question in this family's own words, one sentence, ending in " +
+              "a question mark. Fold in their budget, care level, or must-haves " +
+              "where it makes the question sharper — but never drop what the " +
+              "question is actually asking for.",
+          ),
+      }),
+    )
+    .describe(
+      "Exactly five questions, one for each key, in this order: opening, cost, " +
+        "waitlist, staffing, tour.",
+    ),
+  closing: z
+    .string()
+    .describe(
+      "One short sentence to close on. No sign-off name — that is added " +
+        "afterwards. No promises about calling, and nothing that reads as a " +
+        "form letter.",
+    ),
+});
+export type InquiryDraft = z.infer<typeof inquiryDraftSchema>;
+
+/**
+ * The follow-up. Same shape, fewer questions — only the ones they dodged.
+ *
+ * This is the moment the product is actually about. A facility answered four
+ * of five and left the price out, and rather than leaving a gap on the board
+ * the agent writes back in the same thread and asks again, naming what is
+ * missing. One round, politely, and then we stop.
+ */
+export const followUpDraftSchema = z.object({
+  opening: z
+    .string()
+    .describe(
+      "One sentence thanking them for what they DID answer, referring to it " +
+        "specifically so it is obvious the reply was read by a person. Never " +
+        "scolding, never passive-aggressive.",
+    ),
+  questions: z
+    .array(
+      z.object({
+        key: z.enum(["opening", "cost", "waitlist", "staffing", "tour"]),
+        text: z
+          .string()
+          .describe(
+            "Ask the missing thing again, more concretely than the first time. " +
+              "If they said cost depends on an assessment, ask for the base " +
+              "rate and the range of the care tiers. If they were vague about " +
+              "staffing, ask for the overnight ratio as a number.",
+          ),
+      }),
+    )
+    .describe("Only the questions that were left unanswered. Never more than three."),
+  closing: z
+    .string()
+    .describe("One short, easy sentence. No sign-off name."),
+});
+export type FollowUpDraft = z.infer<typeof followUpDraftSchema>;
+
+/**
+ * Reading a facility's reply.
+ *
+ * Every field is nullable and null means "they did not tell us", which is a
+ * different fact from zero and must never be rendered as one. The `unanswered`
+ * list the model returns is a cross-check: the authoritative list is derived
+ * from which fields came back null, so a model that answers confidently about
+ * a question the text does not address cannot put a number on the board.
+ */
+export const replyParseSchema = z.object({
+  isAutoReply: z
+    .boolean()
+    .describe(
+      "True for an out-of-office, a delivery failure notice, a no-reply " +
+        "autoresponder, or a marketing blast. These are not answers and must " +
+        "not be scored as if they were.",
+    ),
+  hasOpening: z
+    .boolean()
+    .nullable()
+    .describe(
+      "True if they say a place is available now or within a few weeks. False " +
+        "if they say they are full. Null if they did not address availability.",
+    ),
+  monthlyCostLow: z
+    .number()
+    .nullable()
+    .describe(
+      "Lowest all-in monthly dollar figure a family could actually end up " +
+        "paying, as stated. If they give one number, put it in both low and " +
+        "high. If they give a base rate plus care tiers, add the base to the " +
+        "cheapest tier. Null if no number appears — 'depends on care level' is " +
+        "null, not a guess.",
+    ),
+  monthlyCostHigh: z
+    .number()
+    .nullable()
+    .describe(
+      "Highest all-in monthly figure on the same basis. Exclude one-time " +
+        "move-in and community fees; those are not monthly.",
+    ),
+  oneTimeFee: z
+    .number()
+    .nullable()
+    .describe(
+      "Any one-time community, move-in, or admission fee, in dollars. Null if " +
+        "none is mentioned. This is the charge families are most often " +
+        "surprised by, so it is captured separately rather than folded in.",
+    ),
+  waitlistWeeks: z
+    .number()
+    .nullable()
+    .describe(
+      "Waitlist length in WEEKS. Convert months at 4.35 weeks per month and " +
+        "take the midpoint of a range. Zero if they explicitly say there is no " +
+        "waitlist. Null if they did not say.",
+    ),
+  tourOffered: z
+    .boolean()
+    .nullable()
+    .describe(
+      "True if they offer a visit or propose a time. False if they decline or " +
+        "say not currently. Null if tours are not mentioned.",
+    ),
+  staffRatioNights: z
+    .string()
+    .nullable()
+    .describe(
+      "The overnight caregiver-to-resident ratio exactly as they express it, " +
+        "normalised to the form '1:12'. If they give different weekday and " +
+        "weekend numbers, give the overnight one. Null for 'we exceed state " +
+        "minimums' or any other claim without a number — a reassurance is not " +
+        "a ratio.",
+    ),
+  unanswered: z
+    .array(z.enum(["opening", "cost", "waitlist", "staffing", "tour"]))
+    .describe(
+      "Which of the five they did not actually answer. A question deflected " +
+        "to a phone call, an assessment, or a tour counts as unanswered.",
+    ),
+  confidence: z
+    .number()
+    .describe(
+      "0 to 1. How confident you are that the fields above reflect what this " +
+        "reply says. Low when the text is ambiguous, when figures might be for " +
+        "a different care level, or when the reply is mostly deflection.",
+    ),
+  replySummary: z
+    .string()
+    .describe(
+      "One or two sentences summarising what the facility said, in their own " +
+        "terms, for a family scanning a board. Report only what the reply " +
+        "states. Never add advice, never characterise the facility, and never " +
+        "infer anything about the quality of care.",
+    ),
+});
+export type ReplyParse = z.infer<typeof replyParseSchema>;
+
+export const INQUIRY_DRAFT_SYSTEM = `You write a short email from a family member to a senior care facility, asking the five things that facility websites never publish.
+
+The person writing is a 45-65 year old arranging care for a parent, usually in a hurry and usually upset. You are writing AS them, in their voice. The recipient is an admissions coordinator who gets a lot of email and will answer a short, human, specific one.
+
+Rules, all of them absolute:
+- Never mention artificial intelligence, an agent, automation, software, a tool, a platform, or a service. There is no such thing in this email. A person is writing to another person.
+- Never say where the facility's contact details came from, and never mention inspection records, ratings, or anything about the facility's history. This letter asks about availability and cost; it is not an interrogation.
+- Warm, brief, direct. Under 200 words all in. Short paragraphs. No bullet points in the opening or closing.
+- No flattery, no "I hope this email finds you well", no "I came across your beautiful community".
+- Ask for exactly the five things you are given, one question each, in the order given. Do not merge two into one sentence and do not add a sixth.
+- Fold the family's budget, care level, and must-haves into the questions where it sharpens them, but never let personalisation swallow what the question is asking for. A cost question must still ask for a monthly number.
+- Never state the family's budget as a limit you are asking them to meet — ask what the cost is, not whether they can do it for the budget.
+- Plain American English. No em dashes.`;
+
+export const FOLLOW_UP_SYSTEM = `You write a short follow-up email from a family member to a senior care facility that answered some of their questions and left others out.
+
+This is the second message in an existing thread. The facility replied, was helpful about some things, and did not give a straight answer on the rest. Your job is to ask again for exactly what is missing, and to make it easy for them to answer.
+
+Rules, all of them absolute:
+- Never mention artificial intelligence, an agent, automation, software, or a service. A person is writing.
+- Open by thanking them for something specific they actually did answer. Never generically.
+- Never accuse them of avoiding the question, and never imply bad faith. Admissions coordinators are busy, not dishonest.
+- Ask more concretely than the first email did. "Depends on the assessment" is answered by asking for the base rate and the range of the care tiers. A staffing claim without a number is answered by asking for the overnight ratio as a number.
+- Under 120 words all in.
+- Never repeat a question they already answered.
+- Plain American English. No em dashes.`;
+
+export const REPLY_PARSE_SYSTEM = `You read one email from a United States senior care facility to a family, and extract what it actually says.
+
+The family asked five things: whether there is an opening, the all-in monthly cost, the waitlist length, the overnight caregiver-to-resident ratio, and whether they can tour. The reply is ordinary human email — signatures, phone numbers, half-answers, numbers buried in sentences, and a great deal of pleasant deflection.
+
+The distinction that matters most is between an answer and a non-answer. "Pricing depends on her care level", "give me a call and we can discuss", "we'll know more after the assessment", and "we always exceed state minimums" are NOT answers. They are the most common thing in this industry and the whole point of reading these replies is to notice them. Return null for the field and put the question in unanswered.
+
+Rules, all of them absolute:
+- Never guess a number. A range you inferred is worse than a null, because a family will plan around it.
+- Null means "they did not say". Zero means "they said zero". Never confuse them: a waitlist of null is not a waitlist of none.
+- Extract only from this email. Never use anything you know about the facility, the chain, or typical prices in the region.
+- A price for a different care level than the one asked about is still worth extracting, but it should lower your confidence.
+- The summary reports what they said. It never advises, never judges the facility, and never speculates about why they answered the way they did.
+- Plain American English.`;

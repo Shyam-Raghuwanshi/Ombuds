@@ -259,8 +259,32 @@ export default defineSchema({
     ),
     budgetMax: v.optional(v.number()),
     mustHaves: v.array(v.string()),
-    inboxId: v.string(), // <- dedicated AgentMail inbox for this search
+    // The AgentMail inbox this search's threads live in. One inbox per search
+    // is the intended architecture; when the AgentMail plan will not issue
+    // another inbox we fall back to the org inbox and record that here rather
+    // than pretending, so the UI can say which it is.
+    inboxId: v.string(),
+    inboxEmail: v.string(),
+    inboxMode: v.union(v.literal("dedicated"), v.literal("shared")),
+    // False only when both OMBUDS_DEMO_MODE=false and OMBUDS_ALLOW_REAL_SENDS=true
+    // at the moment the campaign ran. See convex/lib/sendGuard.ts.
+    demoMode: v.boolean(),
     isSample: v.boolean(), // true for the judge cold-open run
+    campaignStartedAt: v.optional(v.number()),
+    // The opening letter, drafted once per family rather than once per
+    // facility. Only the facility's name differs between the twelve copies, so
+    // drafting it twelve times would pay a large model twelve times to write
+    // the same letter. Cached here and interpolated at send time.
+    letterDraft: v.optional(
+      v.object({
+        subject: v.string(),
+        opening: v.string(),
+        questions: v.array(v.object({ key: v.string(), text: v.string() })),
+        closing: v.string(),
+        model: v.string(),
+        draftedAt: v.number(),
+      }),
+    ),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
 
@@ -271,7 +295,21 @@ export default defineSchema({
     facilityName: v.string(),
     toEmail: v.string(),
     threadId: v.optional(v.string()), // AgentMail thread
-    outboundId: v.optional(v.string()),
+    outboundId: v.optional(v.string()), // component row — subscribe for lifecycle
+    outboundMessageId: v.optional(v.string()), // AgentMail message id, once sent
+    // The component's own delivery lifecycle, mirrored so the board can show
+    // it without a per-row subquery. The component remains the source of truth.
+    deliveryStatus: v.optional(v.string()),
+    deliveryError: v.optional(v.string()),
+    // Demo labelling. `simulated` drives the badge in the UI; `intendedTo` is
+    // the address we would have written to had live sending been armed, shown
+    // beside the badge so the screen never implies we contacted a real home.
+    simulated: v.boolean(),
+    persona: v.optional(v.string()),
+    intendedTo: v.optional(v.string()),
+    // No email address was ever found for this facility. It keeps its place on
+    // the board with its inspection record and its CMS phone number.
+    noEmailFound: v.optional(v.boolean()),
     status: v.union(
       v.literal("queued"),
       v.literal("sent"),
@@ -286,10 +324,14 @@ export default defineSchema({
     lastNudgeAt: v.optional(v.number()),
     nudgeCount: v.number(),
     rounds: v.number(), // how many back-and-forths — surface this in the UI
-    // parsed answers
+    lastInboundAt: v.optional(v.number()),
+    answeredAt: v.optional(v.number()),
+    // parsed answers — every one optional, because absent is a different fact
+    // from zero and must never be rendered as one
     hasOpening: v.optional(v.boolean()),
     monthlyCostLow: v.optional(v.number()),
     monthlyCostHigh: v.optional(v.number()),
+    oneTimeFee: v.optional(v.number()),
     waitlistWeeks: v.optional(v.number()),
     tourOffered: v.optional(v.boolean()),
     staffRatioNights: v.optional(v.string()),
@@ -302,10 +344,59 @@ export default defineSchema({
     .index("by_search_status", ["searchId", "status"]),
 
   // Demo only — we never email real facilities. See CLAUDE.md section 7.1.
+  //
+  // The seeded roster for one campaign: which persona each facility is playing,
+  // how long it will wait before replying, and the inbox we control that its
+  // mail is routed to. Written when a demo campaign starts, so the simulation
+  // is inspectable rather than hidden in code.
   simulatedFacilities: defineTable({
+    searchId: v.id("searches"),
     ccn: v.string(),
     inboxId: v.string(),
     persona: v.string(),
     responseDelayMs: v.number(),
-  }),
+  })
+    .index("by_search", ["searchId"])
+    .index("by_search_ccn", ["searchId", "ccn"]),
+
+  // Both halves of every conversation, in one place.
+  //
+  // AgentMail's component stores the inbound side and we could read it back per
+  // thread, but the board needs the family's own outgoing letters in the same
+  // ordered list, and it needs them the instant they are drafted rather than
+  // after a round trip. So this is our app-side mirror: one row per message,
+  // either direction, with the provenance of who or what composed it.
+  threadMessages: defineTable({
+    inquiryId: v.id("inquiries"),
+    searchId: v.id("searches"),
+    direction: v.union(v.literal("outbound"), v.literal("inbound")),
+    round: v.number(), // 1 = opening letter and its reply, 2 = the follow-up
+    subject: v.string(),
+    body: v.string(),
+    fromAddress: v.string(),
+    toAddress: v.string(),
+    messageId: v.optional(v.string()), // AgentMail message id, when there is one
+    threadId: v.optional(v.string()),
+    // True for a persona's reply. Rendered with a visible badge, always.
+    simulated: v.boolean(),
+    // Which model drafted an outbound letter, or which persona played a reply.
+    model: v.optional(v.string()),
+    persona: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_inquiry", ["inquiryId"])
+    .index("by_search", ["searchId"])
+    .index("by_message", ["messageId"]),
+
+  // Inboxes we have provisioned, so a re-run reuses them instead of asking
+  // AgentMail for another one. `purpose` is "search:<id>" for a family's own
+  // inbox and "demo_facilities" for the one every simulated facility answers
+  // from.
+  agentInboxes: defineTable({
+    purpose: v.string(),
+    inboxId: v.string(),
+    email: v.string(),
+    mode: v.union(v.literal("dedicated"), v.literal("shared")),
+    createdAt: v.number(),
+  }).index("by_purpose", ["purpose"]),
 });
