@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** not deployed
 - **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
-- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, scheduled functions, realtime queries, paginated queries, components
+- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, realtime queries, paginated queries, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-28T09:28:09Z
+- **Last updated:** 2026-08-28T18:21:12Z
 
 ## Log
 
@@ -135,3 +135,70 @@ set on the deployment. The Firecrawl half of the news scan is verified live — 
 search returned 19 candidates — but the triage step that decides which of them
 are real cannot run, so it degrades to a message and stores nothing rather than
 publishing untriaged results.
+
+### 2026-08-28 - c72a645
+The email half of the product works end to end. A family's search provisions an
+AgentMail inbox, drafts one letter, and writes to every shortlisted facility;
+replies come back over the next minute and the board fills in underneath them.
+Verified live on a twelve-facility shortlist near Pomona: six real AgentMail
+sends went out labelled by search and CCN, six facilities had no published
+address and stayed on the board with their inspection record and phone number,
+and every row moved queued to sent to replied on its own
+(`convex/email.ts`, `convex/searches.ts`, `src/Board.tsx`).
+
+Every inquiry asks the same five things — opening, all-in monthly cost,
+waitlist, night and weekend staffing ratio, tour dates. The model writes them in
+the family's voice from their care level, budget, and must-haves, but it does
+not get to decide which questions are asked: a dropped question is filled from
+canonical phrasing before the letter goes out, so a blank on the board always
+means a facility dodged something rather than that we forgot to ask
+(`convex/lib/questions.ts`, `convex/lib/letter.ts`). The letter is drafted once
+per family rather than once per facility, since only the name differs between
+the twelve copies.
+
+When a facility answers four questions and leaves one out, the agent writes back
+in the same thread asking only for what is missing, then stops. Verified on the
+seeded "depends on her care level" reply: round one gave an opening and no
+price, the follow-up asked for the base rate and the care tiers, and round two
+came back with $6,000 to $7,200 a month. One follow-up, then it stops. A cron
+sends one nudge after 72 hours of silence and never a second
+(`convex/crons.ts`).
+
+No real nursing home is emailed. Two independent env flags, both off by default,
+have to be set before a facility's own address can even be returned by the send
+path, and in demo mode every inquiry is routed to an inbox we control and
+answered by a seeded persona after 20 to 90 seconds — one with an opening, one
+waitlisted six months, one that dodges the price, one that dodges night
+staffing, and one dead address that bounces (`convex/lib/sendGuard.ts`,
+`convex/lib/personas.ts`). Simulated threads are labelled on screen next to the
+address we would have written to. The personas are hand-written rather than
+model-generated so the parser is tested against text it did not write, and every
+seeded reply is handed to the same `ingestInbound` function AgentMail's webhook
+calls — there is one inbound code path, not a demo one and a real one.
+
+Delivery state is the component's own: `onEvent` moves a row from sent to
+delivered to bounced with no polling, and the webhook is mounted for real in
+`convex/http.ts` where a 501 stub used to be. Search reads are owner-checked —
+a search is one family's private list of where they are looking and what they
+can afford.
+
+Two blockers found by testing, one fixed. `@agentmail/convex@0.1.0` ships
+`defineComponent("agentmail")` with no env contract while its request path reads
+`AGENTMAIL_API_KEY` from the component's own `process.env`; Convex isolates
+component env, so the key was set on the deployment and invisible inside the
+component, and every send failed in the component's workpool. A committed patch
+declares the two variables the component already reads, after which sends return
+a real message id and thread id (`patches/@agentmail+convex+0.1.0.patch`). Still
+open: the same version routes `createInbox`, `listInboxes`, `getThread`, and
+`getMessage` through functions the component declares internal, which a mounting
+app cannot resolve, so per-search inbox provisioning falls back to the shared org
+inbox and records `inboxMode: "shared"` rather than pretending. The deployment's
+API credential is separately denied `inbox_create`.
+
+Blocked, unchanged from the previous entry: the dev provider's API credits are
+exhausted and no OpenAI key is set, so the two model-dependent steps — drafting
+the personalised letter and parsing a reply into structured fields — fall back to
+canonical text and leave the availability column empty. Both were verified by
+driving the parse chain directly with realistic parse results: the row settled
+to answered with cost, waitlist, and night ratio, and the dodged-price row went
+to clarifying and fired its follow-up.
