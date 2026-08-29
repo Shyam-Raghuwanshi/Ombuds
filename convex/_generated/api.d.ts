@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agentLoop from "../agentLoop.js";
 import type * as ai_fixtures from "../ai/fixtures.js";
 import type * as ai_provider from "../ai/provider.js";
 import type * as ai_schemas from "../ai/schemas.js";
@@ -30,6 +31,7 @@ import type * as lib_severity from "../lib/severity.js";
 import type * as licensing from "../licensing.js";
 import type * as news from "../news.js";
 import type * as searches from "../searches.js";
+import type * as usage from "../usage.js";
 
 import type {
   ApiFromModules,
@@ -38,6 +40,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentLoop: typeof agentLoop;
   "ai/fixtures": typeof ai_fixtures;
   "ai/provider": typeof ai_provider;
   "ai/schemas": typeof ai_schemas;
@@ -60,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   licensing: typeof licensing;
   news: typeof news;
   searches: typeof searches;
+  usage: typeof usage;
 }>;
 
 /**

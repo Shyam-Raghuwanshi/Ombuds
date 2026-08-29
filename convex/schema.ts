@@ -69,6 +69,19 @@ export default defineSchema({
     abuseIcon: v.boolean(), // CMS flags facilities with abuse citations
     latitude: v.number(),
     longitude: v.number(),
+    // Columns most builders skip, and the reason the agent can do something
+    // nobody else does: when a facility emails us "one caregiver to twelve
+    // residents at night", we can put the federal staffing figure on the same
+    // line. Optional throughout because CMS genuinely publishes "" for some
+    // facilities, and an absent figure must read as absent rather than as zero
+    // (CLAUDE.md section 6).
+    rnHoursWeekend: v.optional(v.number()), // RN hours per resident per day, weekend
+    totalNurseHours: v.optional(v.number()), // total nurse staffing hours per resident per day
+    nurseTurnover: v.optional(v.number()), // total nursing staff turnover, percent
+    specialFocusStatus: v.optional(v.string()), // CMS's own chronic-poor-performer flag
+    numberOfFines: v.optional(v.number()),
+    totalFinesUsd: v.optional(v.number()),
+    changedOwnershipLast12Months: v.optional(v.boolean()),
     // CMS publishes a phone number and nothing else — no website, no email.
     // Everything below this line was found on the open web by Firecrawl.
     website: v.optional(v.string()),
@@ -338,10 +351,36 @@ export default defineSchema({
     confidence: v.optional(v.number()), // 0-1 from the parser
     unanswered: v.array(v.string()), // which of our 5 questions they dodged
     replySummary: v.optional(v.string()),
+    // The Convex Agent thread that reasons about this one conversation. The
+    // agent reads each reply on this thread, so by round two it has the whole
+    // exchange in front of it rather than one message in isolation.
+    agentThreadId: v.optional(v.string()),
+    // Why the agent wrote back a second time. `unanswered` is the ordinary
+    // case; `low_confidence` is a reply that technically contained numbers but
+    // was too hedged to put on a board, which is a different thing and is
+    // labelled differently in the UI.
+    followUpReason: v.optional(
+      v.union(v.literal("unanswered"), v.literal("low_confidence")),
+    ),
+    // Set by the monthly re-verification sweep once what a facility told us is
+    // more than thirty days old. Openings and waitlists move; a four-month-old
+    // "room available now" is not a fact any more and must not be shown as one.
+    staleAt: v.optional(v.number()),
   })
     .index("by_search", ["searchId"])
     .index("by_thread", ["threadId"])
-    .index("by_search_status", ["searchId", "status"]),
+    .index("by_search_status", ["searchId", "status"])
+    // The monthly CMS refresh asks the reverse question — "which families are
+    // watching this facility?" — so it needs to reach inquiries by CCN without
+    // scanning every conversation in the system.
+    .index("by_ccn", ["ccn"])
+    // The stale-answer sweep walks answered inquiries in age order.
+    .index("by_status_answered", ["status", "answeredAt"])
+    // The nudge sweeps ask "which letters have been out too long?" across every
+    // family at once, so they need to reach unanswered inquiries by age without
+    // reading the conversations that already settled.
+    .index("by_status_sent", ["status", "sentAt"])
+    .index("by_status_nudged", ["status", "lastNudgeAt"]),
 
   // Demo only — we never email real facilities. See CLAUDE.md section 7.1.
   //
@@ -387,6 +426,79 @@ export default defineSchema({
     .index("by_inquiry", ["inquiryId"])
     .index("by_search", ["searchId"])
     .index("by_message", ["messageId"]),
+
+  // =========================================================================
+  // The agent loop, and what it costs
+  // =========================================================================
+
+  // Our index into the Convex Agent component's own threads.
+  //
+  // The component owns the messages, the tool calls, and the token counts; this
+  // table is only how we get from a family's search back to the agent threads
+  // that belong to it, which is what makes "what has this search cost" a
+  // question we can answer at all.
+  agentThreads: defineTable({
+    threadId: v.string(), // Agent component thread id
+    searchId: v.id("searches"),
+    inquiryId: v.optional(v.id("inquiries")),
+    purpose: v.string(), // "inquiry" | "ranking"
+    createdAt: v.number(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_search", ["searchId"])
+    .index("by_inquiry", ["inquiryId"]),
+
+  // One row per model call, with the tokens it burned and what they cost.
+  //
+  // We pay for this ourselves and there are no credits (CLAUDE.md section 10),
+  // so the number is real and it is shown to the family rather than hidden in a
+  // dashboard. `priced: false` means we have no published rate for that model:
+  // the tokens still count, the dollars deliberately do not.
+  modelUsage: defineTable({
+    searchId: v.optional(v.id("searches")),
+    inquiryId: v.optional(v.id("inquiries")),
+    threadId: v.optional(v.string()), // agent thread, when it came from the agent
+    purpose: v.string(), // the Task name, or "agentLoop"
+    provider: v.string(),
+    model: v.string(),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    cachedInputTokens: v.number(),
+    reasoningTokens: v.number(),
+    costUsd: v.number(),
+    priced: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_search", ["searchId"])
+    .index("by_inquiry", ["inquiryId"]),
+
+  // =========================================================================
+  // What changed since the family last looked
+  // =========================================================================
+
+  // CMS republishes the whole inspection record every month. A facility a
+  // family is actively considering can pick up a new harm-level citation
+  // between the day they shortlisted it and the day they sign a contract, and
+  // nothing in the world tells them. The monthly refresh diffs the old record
+  // against the new one and writes a row here for every harm-level citation
+  // that was not there before, attached to the searches that are watching.
+  facilityAlerts: defineTable({
+    searchId: v.id("searches"),
+    ccn: v.string(),
+    facilityName: v.string(),
+    kind: v.union(
+      v.literal("new_actual_harm"),
+      v.literal("new_immediate_jeopardy"),
+    ),
+    tag: v.string(), // "F0689"
+    tagDescription: v.string(),
+    scopeSeverity: v.string(), // "G".."L"
+    surveyDate: v.number(), // when the inspection happened
+    detectedAt: v.number(), // when our refresh noticed
+    dismissedAt: v.optional(v.number()),
+  })
+    .index("by_search", ["searchId"])
+    .index("by_search_ccn", ["searchId", "ccn"]),
 
   // Inboxes we have provisioned, so a re-run reuses them instead of asking
   // AgentMail for another one. `purpose` is "search:<id>" for a family's own

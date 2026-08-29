@@ -81,6 +81,63 @@ const amCtx = (ctx: unknown): any => ctx;
 /** How many rounds we are willing to have. One follow-up, then we stop. */
 const MAX_ROUNDS = 2;
 
+/**
+ * Below this, a reply that technically contained numbers is not something we
+ * are willing to put on a board a family will plan around.
+ *
+ * "Somewhere in the six thousands, I'd have to check" parses. It parses to a
+ * number. It is not an answer, and the difference between it and "$6,200" is
+ * the difference between a family budgeting correctly and a family being
+ * surprised at signing. So low confidence earns a second round of its own,
+ * even when every one of the five slots came back filled.
+ */
+const LOW_CONFIDENCE = 0.6;
+
+/**
+ * How long a letter goes unanswered before the single nudge.
+ *
+ * Seventy-two hours in production. Overridable because the demo has to be
+ * rehearsable inside a minute and the nudge is part of what there is to show —
+ * see the risk register in CLAUDE.md: this mechanism gets tested fifty times.
+ */
+function nudgeAfterMs(): number {
+  const raw = Number(process.env.OMBUDS_NUDGE_AFTER_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 72 * 60 * 60 * 1000;
+}
+
+/**
+ * How long a facility's answers stay current.
+ *
+ * Openings close and waitlists move. A four-month-old "we have a room now" is
+ * not a fact, and showing it as one is the single most damaging thing a board
+ * like this could do to a family who then drives an hour to see it.
+ */
+function staleAfterMs(): number {
+  const raw = Number(process.env.OMBUDS_STALE_AFTER_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30 * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * The message to thread a reply onto.
+ *
+ * In demo mode the inbound half of a conversation is played by a persona and
+ * carries a synthetic id (`simulated:<inquiry>:<round>`) so the at-least-once
+ * webhook guard can dedupe it. AgentMail has never seen that id and cannot
+ * reply to it. Our own outbound letter, on the other hand, is a real AgentMail
+ * message with a real id — so that is what the follow-up threads onto, and the
+ * conversation stays one thread in the inbox rather than becoming two.
+ */
+function threadAnchor(
+  inboundMessageId: string | undefined,
+  outboundMessageId: string | undefined,
+): string | undefined {
+  const realInbound =
+    inboundMessageId && !inboundMessageId.startsWith("simulated:")
+      ? inboundMessageId
+      : undefined;
+  return realInbound ?? outboundMessageId;
+}
+
 /** Sends are staggered so the board fills in rather than blinking on at once. */
 const SEND_STAGGER_MS = 1_200;
 
@@ -274,7 +331,14 @@ export const draftLetter = internalAction({
       { searchId },
     );
     if (!search) throw new Error("search not found");
-    if (search.letterDraft && !force) {
+    // A cached draft is reused — except a fallback one. If the model was
+    // unreachable the last time this search ran, we wrote the canonical letter
+    // and cached it, and without this check that outage would follow the
+    // family forever: every future campaign on this search would keep sending
+    // the unpersonalised letter long after the provider recovered. A fallback
+    // is a stand-in, not a result, so it is retried.
+    const cachedIsFallback = search.letterDraft?.model === "canonical-fallback";
+    if (search.letterDraft && !force && !cachedIsFallback) {
       return { drafted: false, model: search.letterDraft.model };
     }
 
@@ -314,6 +378,8 @@ export const draftLetter = internalAction({
         schema: inquiryDraftSchema,
         schemaName: "inquiry_draft",
         schemaDescription: "A family's opening letter to a care facility.",
+        ctx,
+        attribution: { searchId },
       });
       subject = result.object.subject;
       opening = result.object.opening;
@@ -387,6 +453,9 @@ export const markSent = internalMutation({
     model: v.string(),
     round: v.number(),
     status: v.union(v.literal("sent"), v.literal("clarifying")),
+    followUpReason: v.optional(
+      v.union(v.literal("unanswered"), v.literal("low_confidence")),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -397,7 +466,9 @@ export const markSent = internalMutation({
       status: args.status,
       outboundId: args.outboundId,
       sentAt: inquiry.sentAt ?? Date.now(),
+      // The counter the family watches move. One per letter we sent them.
       rounds: args.round,
+      followUpReason: args.followUpReason ?? inquiry.followUpReason,
     });
 
     await ctx.db.insert("threadMessages", {
@@ -521,6 +592,49 @@ export const sendInquiryWorker = internalAction({
       });
     }
     return null;
+  },
+});
+
+/**
+ * Add one more facility to a campaign that is already running, and write to it.
+ *
+ * This exists because a shortlist is not fixed. A family reads one facility's
+ * inspection record properly, decides it is worth asking about, and adds it —
+ * and the agent has the same affordance, so when a reply says "we are full but
+ * the Claremont building may have space", it can look that facility up in the
+ * federal record and write to it without a person doing anything.
+ *
+ * The recipient is resolved by the send guard exactly as it is in the fan-out,
+ * so a facility added this way is under the same rule as every other: in demo
+ * mode it is routed to an inbox we own, and nothing reaches a real home.
+ */
+export const sendInquiryToFacility = internalAction({
+  args: { searchId: v.id("searches"), ccn: v.string() },
+  returns: v.object({
+    queued: v.boolean(),
+    reason: v.string(),
+    facilityName: v.optional(v.string()),
+    inquiryId: v.optional(v.id("inquiries")),
+  }),
+  handler: async (
+    ctx,
+    { searchId, ccn },
+  ): Promise<{
+    queued: boolean;
+    reason: string;
+    facilityName?: string;
+    inquiryId?: Id<"inquiries">;
+  }> => {
+    // The letter is drafted once per search and cached on it; a facility added
+    // later gets that same letter rather than paying for a new one.
+    await ctx.runAction(internal.email.draftLetter, { searchId });
+    const demoInbox = await demoFacilityInbox(ctx);
+    return await ctx.runMutation(internal.searches.queueOneFacility, {
+      searchId,
+      ccn,
+      demoInboxId: demoInbox.inboxId,
+      demoInboxEmail: demoInbox.email,
+    });
   },
 });
 
@@ -772,12 +886,15 @@ export const ingestInbound = internalMutation({
       status: "replied",
       lastInboundAt: Date.now(),
       threadId: args.threadId ?? inquiry.threadId,
+      // Whatever they just told us is current again.
+      staleAt: undefined,
     });
 
-    // Reading the reply needs a model, so it cannot happen inside a mutation.
-    await ctx.scheduler.runAfter(0, internal.email.parseReply, {
+    // Hand the reply to the agent. It reads it, decides whether anything was
+    // dodged, and writes back in the same thread if so — all of which needs a
+    // model, so none of it can happen inside a mutation.
+    await ctx.scheduler.runAfter(0, internal.agentLoop.handleReply, {
       inquiryId: args.inquiryId,
-      body: args.body,
       round,
     });
     return null;
@@ -895,9 +1012,40 @@ export const applyParse = internalMutation({
     const keep = <T,>(existing: T | undefined, incoming: T | undefined) =>
       incoming !== undefined ? incoming : existing;
 
-    const unanswered = args.unanswered;
+    /**
+     * A later round answers what was missing; it does not un-answer what was
+     * already given.
+     *
+     * The parser reads one email at a time, and the reply to a follow-up
+     * usually contains only the thing that was asked for again — a single
+     * staffing ratio, and nothing about cost or openings. Taken at face value
+     * that reads as four fresh dodges, and the board would tell a family that a
+     * facility which answered everything had answered almost nothing.
+     *
+     * So this round's verdict is filtered by what earlier rounds already
+     * established. On round one nothing has been established and the filter is
+     * a no-op; from round two on it is the difference between a follow-up that
+     * closes the gap and one that appears to open four more.
+     */
+    const answeredBefore = new Set<QuestionKey>();
+    if (inquiry.hasOpening !== undefined) answeredBefore.add("opening");
+    if (inquiry.monthlyCostLow !== undefined || inquiry.monthlyCostHigh !== undefined) {
+      answeredBefore.add("cost");
+    }
+    if (inquiry.waitlistWeeks !== undefined) answeredBefore.add("waitlist");
+    if (inquiry.tourOffered !== undefined) answeredBefore.add("tour");
+    if (inquiry.staffRatioNights) answeredBefore.add("staffing");
+
+    const unanswered = args.unanswered.filter(
+      (k) => !answeredBefore.has(k as QuestionKey),
+    );
     const complete = unanswered.length === 0;
     const exhausted = args.round >= MAX_ROUNDS;
+    // A filled-in board is not the goal; a board a family can act on is. A
+    // reply the parser was unsure of gets asked again even when every slot came
+    // back with something in it.
+    const vague = args.confidence < LOW_CONFIDENCE;
+    const settled = complete && !vague;
 
     await ctx.db.patch(args.inquiryId, {
       hasOpening: keep(inquiry.hasOpening, args.hasOpening),
@@ -910,35 +1058,106 @@ export const applyParse = internalMutation({
       confidence: args.confidence,
       replySummary: args.replySummary,
       unanswered,
-      status: complete || exhausted ? "answered" : "clarifying",
-      answeredAt: complete || exhausted ? Date.now() : undefined,
+      status: settled || exhausted ? "answered" : "clarifying",
+      answeredAt: settled || exhausted ? Date.now() : undefined,
+      followUpReason:
+        settled || exhausted
+          ? inquiry.followUpReason
+          : complete
+            ? "low_confidence"
+            : "unanswered",
+      // Fresh again, whatever it said before.
+      staleAt: undefined,
     });
 
-    // The moment the product is about: they left something out, so the agent
-    // writes back in the same thread and asks again. Once.
-    if (!complete && !exhausted) {
-      await ctx.scheduler.runAfter(3_000, internal.email.sendFollowUp, {
-        inquiryId: args.inquiryId,
-        round: args.round + 1,
-      });
-    }
+    // Nothing is scheduled from here. Deciding whether to write back is the
+    // agent's job, and it is holding this conversation open in
+    // `convex/agentLoop.ts` — scheduling a send from inside the mutation the
+    // agent's own tool just called would race it and produce two letters.
     return null;
   },
 });
 
+/** What reading one reply produced. Returned to the agent so it can decide. */
+export type ParseOutcome = {
+  parsed: boolean;
+  reason?: string;
+  round: number;
+  rounds: number;
+  confidence?: number;
+  unanswered: string[];
+  unansweredLabels: string[];
+  replySummary?: string;
+  hasOpening?: boolean;
+  monthlyCostLow?: number;
+  monthlyCostHigh?: number;
+  waitlistWeeks?: number;
+  tourOffered?: boolean;
+  staffRatioNights?: string;
+};
+
+export const parseResult = v.object({
+  parsed: v.boolean(),
+  /** Set when we did not parse: "no_reply", "auto_reply", "parse_failed". */
+  reason: v.optional(v.string()),
+  round: v.number(),
+  rounds: v.number(),
+  confidence: v.optional(v.number()),
+  unanswered: v.array(v.string()),
+  unansweredLabels: v.array(v.string()),
+  replySummary: v.optional(v.string()),
+  hasOpening: v.optional(v.boolean()),
+  monthlyCostLow: v.optional(v.number()),
+  monthlyCostHigh: v.optional(v.number()),
+  waitlistWeeks: v.optional(v.number()),
+  tourOffered: v.optional(v.boolean()),
+  staffRatioNights: v.optional(v.string()),
+});
+
 export const parseReply = internalAction({
-  args: { inquiryId: v.id("inquiries"), body: v.string(), round: v.number() },
-  returns: v.null(),
-  handler: async (ctx, { inquiryId, body, round }) => {
+  args: {
+    inquiryId: v.id("inquiries"),
+    // Both optional: the agent's tool asks for "the latest reply" and this
+    // resolves it, while the scheduler path can hand over the exact text it
+    // just ingested.
+    body: v.optional(v.string()),
+    round: v.optional(v.number()),
+  },
+  returns: parseResult,
+  // The return type is written out because this action is called by a tool in
+  // `convex/agentLoop.ts`, whose api types are generated from this module — an
+  // inference cycle TypeScript will not resolve on its own.
+  handler: async (ctx, args): Promise<ParseOutcome> => {
+    const { inquiryId } = args;
     const loaded = await ctx.runQuery(internal.email.inquiryForSend, { inquiryId });
-    if (!loaded?.inquiry || !loaded.search) return null;
+    if (!loaded?.inquiry || !loaded.search) {
+      return { parsed: false, reason: "no_reply", round: 0, rounds: 0, unanswered: [], unansweredLabels: [] };
+    }
     const { inquiry, search } = loaded as {
       inquiry: Doc<"inquiries">;
       search: Doc<"searches">;
     };
 
+    const latest: { body?: string } | null = await ctx.runQuery(
+      internal.email.lastInboundFor,
+      { inquiryId },
+    );
+    const body: string = args.body ?? String(latest?.body ?? "");
+    const round = args.round ?? Math.max(inquiry.rounds, 1);
+
     // A bounce notice is not something to spend a model call reading.
-    if (!body.trim()) return null;
+    if (!body.trim()) {
+      return {
+        parsed: false,
+        reason: "no_reply",
+        round,
+        rounds: inquiry.rounds,
+        unanswered: inquiry.unanswered,
+        unansweredLabels: inquiry.unanswered.map(
+          (k) => QUESTION_LABEL[k as QuestionKey] ?? k,
+        ),
+      };
+    }
 
     const prompt = [
       `The family asked about ${careLevelPhrase(search.careLevel)} at ` +
@@ -959,15 +1178,28 @@ export const parseReply = internalAction({
         schema: replyParseSchema,
         schemaName: "reply_parse",
         schemaDescription: "What one facility's reply actually says.",
+        ctx,
+        attribution: { searchId: search._id, inquiryId },
       });
       parsed = result.object;
     } catch (error) {
       console.error(`[email] reply parse failed for ${inquiryId}: ${error}`);
-      return null;
+      return {
+        parsed: false,
+        reason: "parse_failed",
+        round,
+        rounds: inquiry.rounds,
+        unanswered: inquiry.unanswered,
+        unansweredLabels: inquiry.unanswered.map(
+          (k) => QUESTION_LABEL[k as QuestionKey] ?? k,
+        ),
+      };
     }
 
     const nn = <T,>(value: T | null): T | undefined =>
       value === null ? undefined : value;
+
+    const unanswered = deriveUnanswered(parsed);
 
     await ctx.runMutation(internal.email.applyParse, {
       inquiryId,
@@ -979,12 +1211,41 @@ export const parseReply = internalAction({
       waitlistWeeks: nn(parsed.waitlistWeeks),
       tourOffered: nn(parsed.tourOffered),
       staffRatioNights: nn(parsed.staffRatioNights),
-      unanswered: deriveUnanswered(parsed),
+      unanswered,
       confidence: parsed.confidence,
       replySummary: parsed.replySummary,
       isAutoReply: parsed.isAutoReply,
     });
-    return null;
+
+    if (parsed.isAutoReply) {
+      return {
+        parsed: false,
+        reason: "auto_reply",
+        round,
+        rounds: inquiry.rounds,
+        unanswered: inquiry.unanswered,
+        unansweredLabels: inquiry.unanswered.map(
+          (k) => QUESTION_LABEL[k as QuestionKey] ?? k,
+        ),
+        replySummary: parsed.replySummary,
+      };
+    }
+
+    return {
+      parsed: true,
+      round,
+      rounds: inquiry.rounds,
+      confidence: parsed.confidence,
+      unanswered,
+      unansweredLabels: unanswered.map((k) => QUESTION_LABEL[k] ?? k),
+      replySummary: parsed.replySummary,
+      hasOpening: nn(parsed.hasOpening),
+      monthlyCostLow: nn(parsed.monthlyCostLow),
+      monthlyCostHigh: nn(parsed.monthlyCostHigh),
+      waitlistWeeks: nn(parsed.waitlistWeeks),
+      tourOffered: nn(parsed.tourOffered),
+      staffRatioNights: nn(parsed.staffRatioNights),
+    };
   },
 });
 
@@ -1013,21 +1274,67 @@ export const lastInboundFor = internalQuery({
  * most of them. This is the round that turns a deflection into a number.
  */
 export const sendFollowUp = internalAction({
-  args: { inquiryId: v.id("inquiries"), round: v.number() },
-  returns: v.null(),
-  handler: async (ctx, { inquiryId, round }) => {
+  args: {
+    inquiryId: v.id("inquiries"),
+    round: v.number(),
+    reason: v.optional(
+      v.union(v.literal("unanswered"), v.literal("low_confidence")),
+    ),
+  },
+  returns: v.object({ sent: v.boolean(), reason: v.string() }),
+  handler: async (
+    ctx,
+    { inquiryId, round, reason },
+  ): Promise<{ sent: boolean; reason: string }> => {
     const loaded = await ctx.runQuery(internal.email.inquiryForSend, { inquiryId });
-    if (!loaded?.inquiry || !loaded.search) return null;
-    const { inquiry, search } = loaded as {
+    if (!loaded?.inquiry || !loaded.search) {
+      return { sent: false, reason: "no_such_inquiry" };
+    }
+    const { inquiry, search, facility } = loaded as {
       inquiry: Doc<"inquiries">;
       search: Doc<"searches">;
+      facility: Doc<"facilities"> | null;
     };
-    if (inquiry.unanswered.length === 0) return null;
-    if (round > MAX_ROUNDS) return null;
+
+    // We are not a pest. One follow-up per facility, then we stop, whoever asks
+    // and however many times they ask (CLAUDE.md section 4).
+    if (round > MAX_ROUNDS) return { sent: false, reason: "round_cap_reached" };
+    if (inquiry.status === "bounced" || inquiry.status === "no_response") {
+      return { sent: false, reason: `inquiry_is_${inquiry.status}` };
+    }
+
+    // Idempotency, and the reason it matters: two things can ask for this round
+    // — the agent, having decided a question was dodged, and the reconciliation
+    // sweep that runs behind it in case the agent never answered. Both must be
+    // able to fire without a facility receiving the same letter twice.
+    const alreadySent: boolean = await ctx.runQuery(
+      internal.email.outboundExistsForRound,
+      { inquiryId, round },
+    );
+    if (alreadySent) return { sent: false, reason: "already_sent_this_round" };
+
+    const vague =
+      inquiry.confidence !== undefined && inquiry.confidence < LOW_CONFIDENCE;
+    const why = reason ?? (inquiry.unanswered.length > 0 ? "unanswered" : "low_confidence");
+
+    // Something has to be worth asking for.
+    if (inquiry.unanswered.length === 0 && !vague) {
+      return { sent: false, reason: "nothing_left_to_ask" };
+    }
 
     const previous = await ctx.runQuery(internal.email.lastInboundFor, { inquiryId });
-    const missing = inquiry.unanswered as QuestionKey[];
     const tourDates = tourWindow(Date.now());
+
+    /**
+     * What to ask for. Normally the questions they skipped. When they answered
+     * all five but hedged every one of them, the two that a family actually
+     * plans around — what it costs and who is on the floor at night — are put
+     * back to them for a figure they are willing to put in writing.
+     */
+    const missing: QuestionKey[] =
+      inquiry.unanswered.length > 0
+        ? (inquiry.unanswered as QuestionKey[])
+        : (["cost", "staffing"] as QuestionKey[]);
 
     const answered = [
       inquiry.hasOpening !== undefined &&
@@ -1041,17 +1348,44 @@ export const sendFollowUp = internalAction({
       .filter(Boolean)
       .join("; ");
 
+    /**
+     * The federal staffing figure, when the question we are re-asking is the
+     * staffing one.
+     *
+     * This is the sharpest thing this product does (CLAUDE.md section 6): a
+     * facility tells us one caregiver to twelve at night, and CMS has already
+     * published how many registered nurse hours per resident that building
+     * actually reports at the weekend. It goes into the prompt only to make the
+     * question specific — the letter asks for their number, it never quotes the
+     * federal one back at them or accuses anybody of anything.
+     */
+    const staffingContext =
+      missing.includes("staffing") && facility?.rnHoursWeekend !== undefined
+        ? `For context only, never to be mentioned in the email: the federal ` +
+          `record lists ${facility.rnHoursWeekend} registered nurse hours per ` +
+          `resident per day at weekends for this facility. Ask for their ` +
+          `overnight ratio as a number so the two can be compared.`
+        : "";
+
     const prompt = [
       `${inquiry.facilityName} replied to the family's email.`,
       `What they DID answer: ${answered || "very little"}.`,
-      `What they left out: ${missing.map((k) => QUESTION_LABEL[k]).join(", ")}.`,
+      inquiry.unanswered.length > 0
+        ? `What they left out: ${missing.map((k) => QUESTION_LABEL[k]).join(", ")}.`
+        : `They answered everything, but hedged: the figures are too vague to ` +
+          `plan around. Ask them to confirm ` +
+          `${missing.map((k) => QUESTION_LABEL[k].toLowerCase()).join(" and ")} ` +
+          `as a specific number they are happy to put in writing.`,
       `Care level: ${careLevelPhrase(search.careLevel)}. Tour dates on offer: ${tourDates}.`,
+      staffingContext,
       "",
       "Their reply, verbatim, so the thank-you can name something real:",
       "---",
       String(previous?.body ?? "").slice(0, 4_000),
       "---",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     let opening: string;
     let questions: { key: string; text: string }[];
@@ -1065,6 +1399,8 @@ export const sendFollowUp = internalAction({
         schema: followUpDraftSchema,
         schemaName: "follow_up_draft",
         schemaDescription: "A short follow-up asking again for what was left out.",
+        ctx,
+        attribution: { searchId: search._id, inquiryId },
       });
       opening = result.object.opening;
       questions = result.object.questions;
@@ -1097,13 +1433,14 @@ export const sendFollowUp = internalAction({
 
     let outboundId: string | undefined;
     try {
-      if ((demoRealDelivery() || !inquiry.simulated) && inquiry.outboundMessageId) {
+      const anchor = threadAnchor(previous?.messageId, inquiry.outboundMessageId);
+      if ((demoRealDelivery() || !inquiry.simulated) && anchor) {
         // Same thread, so the facility sees one conversation rather than a
         // second cold email.
         const id = await agentmail.replyToMessage(
           amCtx(ctx),
           search.inboxId,
-          previous?.messageId ?? inquiry.outboundMessageId,
+          anchor,
           { text: body, labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`] },
         );
         outboundId = id as unknown as string;
@@ -1122,12 +1459,119 @@ export const sendFollowUp = internalAction({
       model,
       round,
       status: "clarifying",
+      followUpReason: why,
     });
 
     if (inquiry.simulated) {
       await ctx.runMutation(internal.demo.schedulePersonaReply, { inquiryId, round });
     }
-    return null;
+    return { sent: true, reason: why };
+  },
+});
+
+/**
+ * Has a letter already gone out for this round?
+ *
+ * The idempotency key for the whole follow-up path. Rounds are the unit a
+ * facility experiences — one opening letter, one follow-up — so "an outbound
+ * message exists at this round number" is exactly the condition that must never
+ * be true twice.
+ */
+export const outboundExistsForRound = internalQuery({
+  args: { inquiryId: v.id("inquiries"), round: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, { inquiryId, round }) => {
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_inquiry", (q) => q.eq("inquiryId", inquiryId))
+      .collect();
+    return messages.some((m) => m.direction === "outbound" && m.round === round);
+  },
+});
+
+/**
+ * The safety net behind the agent.
+ *
+ * The agent decides whether to write back, and it is the right thing to be
+ * making that call. But this runs on camera, and a model can fail in two ways
+ * that both end with a family staring at a row that never resolves:
+ *
+ *  1. it never reads the reply at all, so nothing is extracted and the row sits
+ *     at "replied" forever;
+ *  2. it reads the reply, sees a dodged question, and answers in prose instead
+ *     of writing back.
+ *
+ * Both have actually happened here, so this covers both. It checks the outcome
+ * rather than the intention: is the reply read, and if the family is still owed
+ * an answer, did a letter go out? Whatever is missing, it does.
+ *
+ * It shares `parseReply` and `sendFollowUp` with the agent, and `sendFollowUp`
+ * refuses a second letter for a round that already has one, so the two cannot
+ * collide even if the agent is still running when this fires.
+ */
+export const ensureReplyHandled = internalAction({
+  args: { inquiryId: v.id("inquiries"), round: v.number() },
+  returns: v.object({
+    parsed: v.boolean(),
+    sent: v.boolean(),
+    reason: v.string(),
+  }),
+  handler: async (
+    ctx,
+    { inquiryId, round },
+  ): Promise<{ parsed: boolean; sent: boolean; reason: string }> => {
+    const loaded = await ctx.runQuery(internal.email.inquiryForSend, { inquiryId });
+    if (!loaded?.inquiry) {
+      return { parsed: false, sent: false, reason: "no_such_inquiry" };
+    }
+    let inquiry = loaded.inquiry as Doc<"inquiries">;
+
+    // Failure 1: the reply was never read. `replied` is the status ingest sets
+    // and `applyParse` always moves off, so a row still sitting there means no
+    // parse ever landed.
+    let parsedHere = false;
+    if (inquiry.status === "replied") {
+      console.warn(
+        `[email] the agent did not read ${inquiry.facilityName}'s reply; ` +
+          `the reconciliation sweep is reading it`,
+      );
+      await ctx.runAction(internal.email.parseReply, { inquiryId, round });
+      parsedHere = true;
+      const reloaded = await ctx.runQuery(internal.email.inquiryForSend, {
+        inquiryId,
+      });
+      if (!reloaded?.inquiry) {
+        return { parsed: true, sent: false, reason: "no_such_inquiry" };
+      }
+      inquiry = reloaded.inquiry as Doc<"inquiries">;
+    }
+
+    // Failure 2: something is still owed and no letter went out for it.
+    const vague =
+      inquiry.confidence !== undefined && inquiry.confidence < LOW_CONFIDENCE;
+    if (inquiry.unanswered.length === 0 && !vague) {
+      return { parsed: parsedHere, sent: false, reason: "nothing_left_to_ask" };
+    }
+    const nextRound = round + 1;
+    if (nextRound > MAX_ROUNDS) {
+      return { parsed: parsedHere, sent: false, reason: "round_cap_reached" };
+    }
+
+    const result: { sent: boolean; reason: string } = await ctx.runAction(
+      internal.email.sendFollowUp,
+      {
+        inquiryId,
+        round: nextRound,
+        reason: inquiry.unanswered.length > 0 ? "unanswered" : "low_confidence",
+      },
+    );
+    if (result.sent) {
+      console.warn(
+        `[email] the agent did not send round ${nextRound} for ` +
+          `${inquiry.facilityName}; the reconciliation sweep sent it`,
+      );
+    }
+    return { parsed: parsedHere, sent: result.sent, reason: result.reason };
   },
 });
 
@@ -1135,44 +1579,222 @@ export const sendFollowUp = internalAction({
 // The nudge — one, after 72 hours of silence, and never more
 // =============================================================================
 
+/**
+ * The two halves of silence.
+ *
+ * A facility that has not answered in three days is almost never ignoring a
+ * family — they are short-staffed and the email is below a pile of them. So one
+ * short note goes out, on its own, and that is the end of it. If the nudge is
+ * also met with silence the row settles at `no_response`, which is an honest
+ * answer a family can act on: this place did not get back to you, here is their
+ * phone number.
+ *
+ * A second chase email is harassment, not persistence. `nudgeCount` is the
+ * whole guarantee and it is checked in the mutation that increments it, so
+ * there is no interleaving of two sweeps that can produce a second one.
+ */
+
 export const silentInquiries = internalQuery({
   args: { olderThanMs: v.number() },
   returns: v.array(v.id("inquiries")),
   handler: async (ctx, { olderThanMs }) => {
     const cutoff = Date.now() - olderThanMs;
-    const all = await ctx.db.query("inquiries").collect();
-    return all
-      .filter(
-        (i) =>
-          (i.status === "sent" || i.status === "delivered") &&
-          i.nudgeCount === 0 &&
-          (i.sentAt ?? 0) > 0 &&
-          (i.sentAt ?? 0) < cutoff,
-      )
-      .map((i) => i._id);
+    // Indexed on (status, sentAt) and bounded: a sweep that runs every hour
+    // across every family in the system must never read a conversation that
+    // has already been answered.
+    const out = [];
+    for (const status of ["sent", "delivered"] as const) {
+      const stale = await ctx.db
+        .query("inquiries")
+        .withIndex("by_status_sent", (q) =>
+          q.eq("status", status).gt("sentAt", 0).lt("sentAt", cutoff),
+        )
+        .take(200);
+      for (const i of stale) if (i.nudgeCount === 0) out.push(i._id);
+    }
+    return out;
   },
 });
 
-export const recordNudge = internalMutation({
+/** Nudged once, still nothing. These are the rows that settle. */
+export const stillSilentAfterNudge = internalQuery({
+  args: { olderThanMs: v.number() },
+  returns: v.array(v.id("inquiries")),
+  handler: async (ctx, { olderThanMs }) => {
+    const cutoff = Date.now() - olderThanMs;
+    const out = [];
+    for (const status of ["sent", "delivered"] as const) {
+      const stale = await ctx.db
+        .query("inquiries")
+        .withIndex("by_status_nudged", (q) =>
+          q.eq("status", status).gt("lastNudgeAt", 0).lt("lastNudgeAt", cutoff),
+        )
+        .take(200);
+      for (const i of stale) {
+        if (i.nudgeCount >= 1 && i.lastInboundAt === undefined) out.push(i._id);
+      }
+    }
+    return out;
+  },
+});
+
+/**
+ * Claim the one nudge this inquiry will ever get.
+ *
+ * Returns false if it has already been claimed. The check and the increment are
+ * in the same mutation, so two sweeps running at once cannot both win.
+ */
+export const claimNudge = internalMutation({
+  args: { inquiryId: v.id("inquiries") },
+  returns: v.boolean(),
+  handler: async (ctx, { inquiryId }) => {
+    const inquiry = await ctx.db.get(inquiryId);
+    if (!inquiry || inquiry.nudgeCount > 0) return false;
+    await ctx.db.patch(inquiryId, { nudgeCount: 1, lastNudgeAt: Date.now() });
+    return true;
+  },
+});
+
+export const markNoResponse = internalMutation({
   args: { inquiryId: v.id("inquiries") },
   returns: v.null(),
   handler: async (ctx, { inquiryId }) => {
     const inquiry = await ctx.db.get(inquiryId);
-    if (!inquiry || inquiry.nudgeCount > 0) return null;
-    await ctx.db.patch(inquiryId, {
-      nudgeCount: 1,
-      lastNudgeAt: Date.now(),
-      status: "no_response",
-    });
+    // A reply that landed between the sweep's read and this write wins.
+    if (!inquiry || inquiry.lastInboundAt !== undefined) return null;
+    await ctx.db.patch(inquiryId, { status: "no_response" });
     return null;
   },
 });
 
 /**
- * One polite nudge, 72 hours after a letter went unanswered.
+ * The nudge itself.
  *
- * One. These are understaffed places and a second chase email is harassment,
- * not persistence (CLAUDE.md section 4).
+ * No model is called. A nudge says the same thing to every facility in every
+ * campaign — it is four sentences and it does not need to be written twice, let
+ * alone written by a large model twelve times a week (CLAUDE.md section 10).
+ * It goes into the same thread, so a coordinator sees their own inbox thread
+ * float back up rather than a second cold email.
+ */
+export const sendNudge = internalAction({
+  args: { inquiryId: v.id("inquiries") },
+  returns: v.object({ sent: v.boolean(), reason: v.string() }),
+  handler: async (
+    ctx,
+    { inquiryId },
+  ): Promise<{ sent: boolean; reason: string }> => {
+    const claimed: boolean = await ctx.runMutation(internal.email.claimNudge, {
+      inquiryId,
+    });
+    if (!claimed) return { sent: false, reason: "already_nudged" };
+
+    const loaded = await ctx.runQuery(internal.email.inquiryForSend, { inquiryId });
+    if (!loaded?.inquiry || !loaded.search) {
+      return { sent: false, reason: "no_such_inquiry" };
+    }
+    const { inquiry, search } = loaded as {
+      inquiry: Doc<"inquiries">;
+      search: Doc<"searches">;
+    };
+
+    const previous = await ctx.runQuery(internal.email.lastOutboundFor, { inquiryId });
+    const body = [
+      "Hello,",
+      "",
+      "I wrote a few days ago about a place for my mother and I know how busy " +
+        "admissions gets, so this is just a short note in case my email got " +
+        "buried.",
+      "",
+      "If it is easier to answer just the first two — whether you have an " +
+        "opening and roughly what it costs a month — that would help us a lot.",
+      "",
+      `Thank you,\nThe ${search.label} family`,
+    ].join("\n");
+    const subject = `Re: ${(previous?.subject ?? inquiry.facilityName).replace(
+      /^(\s*re\s*:\s*)+/i,
+      "",
+    )}`;
+
+    let outboundId: string | undefined;
+    try {
+      const anchor = threadAnchor(undefined, inquiry.outboundMessageId);
+      if ((demoRealDelivery() || !inquiry.simulated) && anchor) {
+        const id = await agentmail.replyToMessage(
+          amCtx(ctx),
+          search.inboxId,
+          anchor,
+          { text: body, labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`] },
+        );
+        outboundId = id as unknown as string;
+      }
+    } catch (error) {
+      console.error(`[email] nudge send failed for ${inquiryId}: ${error}`);
+    }
+
+    // The nudge is not a round. Rounds are the questions-and-answers a family
+    // watches; a nudge added nothing to the conversation and must not inflate
+    // the counter on the board.
+    await ctx.runMutation(internal.email.recordNudgeMessage, {
+      inquiryId,
+      outboundId,
+      subject,
+      body,
+      fromAddress: search.inboxEmail,
+      toAddress: inquiry.toEmail,
+    });
+    return { sent: true, reason: "nudged" };
+  },
+});
+
+export const lastOutboundFor = internalQuery({
+  args: { inquiryId: v.id("inquiries") },
+  returns: v.union(v.null(), v.any()),
+  handler: async (ctx, { inquiryId }) => {
+    const messages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_inquiry", (q) => q.eq("inquiryId", inquiryId))
+      .collect();
+    const outbound = messages.filter((m) => m.direction === "outbound");
+    return outbound[outbound.length - 1] ?? null;
+  },
+});
+
+export const recordNudgeMessage = internalMutation({
+  args: {
+    inquiryId: v.id("inquiries"),
+    outboundId: v.optional(v.string()),
+    subject: v.string(),
+    body: v.string(),
+    fromAddress: v.string(),
+    toAddress: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const inquiry = await ctx.db.get(args.inquiryId);
+    if (!inquiry) return null;
+    await ctx.db.insert("threadMessages", {
+      inquiryId: args.inquiryId,
+      searchId: inquiry.searchId,
+      direction: "outbound",
+      round: inquiry.rounds, // the same round; a nudge repeats, it does not ask
+      subject: args.subject,
+      body: args.body,
+      fromAddress: args.fromAddress,
+      toAddress: args.toAddress,
+      threadId: inquiry.threadId,
+      simulated: false,
+      model: "no-model-nudge",
+      createdAt: Date.now(),
+    });
+    if (args.outboundId) {
+      await ctx.db.patch(args.inquiryId, { outboundId: args.outboundId });
+    }
+    return null;
+  },
+});
+
+/**
+ * Cron: one polite nudge, 72 hours after a letter went unanswered.
  */
 export const nudgeSweep = internalAction({
   args: {},
@@ -1180,12 +1802,79 @@ export const nudgeSweep = internalAction({
   handler: async (ctx): Promise<{ nudged: number }> => {
     const ids: Id<"inquiries">[] = await ctx.runQuery(
       internal.email.silentInquiries,
-      { olderThanMs: 72 * 60 * 60 * 1000 },
+      { olderThanMs: nudgeAfterMs() },
+    );
+    let nudged = 0;
+    for (const inquiryId of ids) {
+      const result: { sent: boolean } = await ctx.runAction(
+        internal.email.sendNudge,
+        { inquiryId },
+      );
+      if (result.sent) nudged += 1;
+    }
+    return { nudged };
+  },
+});
+
+/**
+ * Cron: settle the rows that were nudged and stayed silent.
+ *
+ * Runs on the same clock as the nudge, so a facility gets the same three days
+ * to answer the nudge that it got to answer the letter.
+ */
+export const noResponseSweep = internalAction({
+  args: {},
+  returns: v.object({ settled: v.number() }),
+  handler: async (ctx): Promise<{ settled: number }> => {
+    const ids: Id<"inquiries">[] = await ctx.runQuery(
+      internal.email.stillSilentAfterNudge,
+      { olderThanMs: nudgeAfterMs() },
     );
     for (const inquiryId of ids) {
-      await ctx.runMutation(internal.email.recordNudge, { inquiryId });
+      await ctx.runMutation(internal.email.markNoResponse, { inquiryId });
     }
-    return { nudged: ids.length };
+    return { settled: ids.length };
+  },
+});
+
+// =============================================================================
+// Stale answers — what a facility told us has a shelf life
+// =============================================================================
+
+/**
+ * Cron: mark availability answers older than thirty days as stale.
+ *
+ * The federal half of a row ages gracefully: an inspection from March is still
+ * an inspection from March, and it says so. The email half does not. "One room
+ * open now" was true on the day it was written and is worth nothing four months
+ * later, and a family who reads it as current will drive an hour for a room
+ * that went in April.
+ *
+ * So this is a cron rather than a computed field on read: flipping a stored
+ * flag is what makes the badge appear on a board somebody already has open,
+ * without them refreshing anything.
+ */
+export const staleSweep = internalMutation({
+  args: {},
+  returns: v.object({ marked: v.number() }),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - staleAfterMs();
+    // Bounded, and it does not need to be exhaustive: this runs daily, and a
+    // row that misses today's batch is marked tomorrow.
+    const answered = await ctx.db
+      .query("inquiries")
+      .withIndex("by_status_answered", (q) =>
+        q.eq("status", "answered").lt("answeredAt", cutoff),
+      )
+      .take(500);
+
+    let marked = 0;
+    for (const inquiry of answered) {
+      if (inquiry.staleAt !== undefined) continue;
+      await ctx.db.patch(inquiry._id, { staleAt: Date.now() });
+      marked += 1;
+    }
+    return { marked };
   },
 });
 
@@ -1209,6 +1898,12 @@ export const thread = query({
       inboxEmail: v.string(),
       deliveryStatus: v.union(v.string(), v.null()),
       unanswered: v.array(v.string()),
+      unansweredLabels: v.array(v.string()),
+      confidence: v.union(v.number(), v.null()),
+      followUpReason: v.union(v.string(), v.null()),
+      maxRounds: v.number(),
+      nudgeCount: v.number(),
+      staleAt: v.union(v.number(), v.null()),
       messages: v.array(
         v.object({
           id: v.id("threadMessages"),
@@ -1249,6 +1944,14 @@ export const thread = query({
       inboxEmail: search?.inboxEmail ?? "",
       deliveryStatus: inquiry.deliveryStatus ?? null,
       unanswered: inquiry.unanswered,
+      unansweredLabels: inquiry.unanswered.map(
+        (k) => QUESTION_LABEL[k as QuestionKey] ?? k,
+      ),
+      confidence: inquiry.confidence ?? null,
+      followUpReason: inquiry.followUpReason ?? null,
+      maxRounds: MAX_ROUNDS,
+      nudgeCount: inquiry.nudgeCount,
+      staleAt: inquiry.staleAt ?? null,
       messages: messages
         .sort((a, b) => a.createdAt - b.createdAt)
         .map((m) => ({
@@ -1288,4 +1991,12 @@ export const sendingPosture = query({
   }),
 });
 
-export { agentmail, amCtx, inquiryPool, MAX_ROUNDS, SEND_STAGGER_MS, resolveRecipient };
+export {
+  agentmail,
+  amCtx,
+  inquiryPool,
+  LOW_CONFIDENCE,
+  MAX_ROUNDS,
+  SEND_STAGGER_MS,
+  resolveRecipient,
+};

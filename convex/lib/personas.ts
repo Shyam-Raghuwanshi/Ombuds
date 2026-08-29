@@ -216,6 +216,12 @@ export const PERSONAS: Record<PersonaKey, Persona> = {
  * Ordered so that a shortlist of any size still has range: the first four give
  * the four outcomes CLAUDE.md asks for, and the dodge — our best moment — lands
  * early enough to be on screen inside the first minute.
+ *
+ * `silent` sits at position six deliberately. Only the facilities Firecrawl
+ * found an address for get a persona, and that is typically half a shortlist —
+ * a twelve-home search seeds six conversations. With `silent` any further down
+ * the list, a real run would never produce a facility that says nothing, and
+ * the 72-hour nudge would be a code path nobody had ever watched work.
  */
 export const PERSONA_ROSTER: PersonaKey[] = [
   "has_opening",
@@ -223,8 +229,8 @@ export const PERSONA_ROSTER: PersonaKey[] = [
   "waitlisted",
   "bounces",
   "dodges_staffing",
-  "has_opening",
   "silent",
+  "has_opening",
   "waitlisted",
   "dodges_pricing",
   "has_opening",

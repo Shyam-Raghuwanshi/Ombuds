@@ -25,6 +25,12 @@ export type BoardRow = {
   status: string;
   deliveryStatus: string | null;
   rounds: number;
+  followUpReason: string | null;
+  nudgeCount: number;
+  stale: boolean;
+  answeredAt: number | null;
+  rnHoursWeekend: number | null;
+  specialFocusStatus: string | null;
   hasOpening: boolean | null;
   monthlyCostLow: number | null;
   monthlyCostHigh: number | null;
@@ -64,11 +70,15 @@ export function waitingLabel(row: BoardRow): string {
     case "replied":
       return "Reply received, reading it";
     case "clarifying":
-      return "They left something out — asking again";
+      return row.followUpReason === "low_confidence"
+        ? "Their answer was too vague — asking for a figure"
+        : "They left something out — asking again";
     case "bounced":
       return "The address bounced";
     case "no_response":
-      return "No reply after 72 hours";
+      return row.nudgeCount > 0
+        ? "No reply, and no reply to our one follow-up note"
+        : "No reply after 72 hours";
     default:
       return "Waiting";
   }
@@ -130,4 +140,36 @@ export function fmtTime(ms: number): string {
  */
 export function lowConfidence(confidence: number | null): boolean {
   return confidence !== null && confidence < 0.6;
+}
+
+/**
+ * How old an emailed answer is, in the words a family would use.
+ *
+ * Shown next to every figure that came from a facility rather than from the
+ * federal record. Once the stale sweep has marked a row, the phrasing stops
+ * being a timestamp and starts being a warning, because at that point the
+ * number on screen is no longer something to plan around.
+ */
+export function answerAge(row: BoardRow): string | null {
+  if (!row.answeredAt) return null;
+  const days = Math.floor((Date.now() - row.answeredAt) / 86_400_000);
+  if (days < 1) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.round(days / 30.4);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
+}
+
+/**
+ * The federal staffing figure, phrased so it can sit next to a facility's own
+ * claim without either being mistaken for the other.
+ *
+ * CMS publishes registered nurse hours per resident per day at the weekend.
+ * That is not the same unit as "one caregiver to twelve residents", and we do
+ * not pretend it is: both are shown, each labelled with where it came from, and
+ * the reader draws their own conclusion.
+ */
+export function federalStaffing(row: BoardRow): string | null {
+  if (row.rnHoursWeekend === null) return null;
+  return `${row.rnHoursWeekend.toFixed(2)} RN hours per resident on weekends`;
 }

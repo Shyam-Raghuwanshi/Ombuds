@@ -62,7 +62,13 @@ function Message({
         {message.body}
       </pre>
 
-      {outbound && message.model && (
+      {outbound && message.model === "no-model-nudge" && (
+        <p className="mt-3 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          A nudge says the same thing to everyone, so no model wrote this one.
+        </p>
+      )}
+
+      {outbound && message.model && message.model !== "no-model-nudge" && (
         <p className="mt-3 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
           Drafted by {message.model} in the family's words, from what they told
           us they needed.
@@ -126,10 +132,40 @@ export function ThreadView({
         </p>
       )}
 
-      {thread.unanswered.length > 0 && (
+      {/* The round counter, in words. This is the thing to read the thread
+          for: the reply that dodged a question, and then the message the agent
+          wrote back on its own. */}
+      {thread.rounds > 1 && (
+        <p className="mt-3 rounded border border-[#14171a] p-3 text-[15px] dark:border-[#e8ebee]">
+          <span className="font-medium">
+            Round {thread.rounds} of {thread.maxRounds}.
+          </span>{" "}
+          {thread.followUpReason === "low_confidence"
+            ? "Their first reply addressed everything but was too vague to plan around, so the agent asked again for a figure — in this thread, on its own."
+            : "They left one of the five questions unanswered, so the agent asked again — in this thread, on its own."}{" "}
+          One follow-up per facility, and then we stop.
+        </p>
+      )}
+
+      {thread.nudgeCount > 0 && (
+        <p className="mt-3 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+          They went quiet, so we sent one short note. Only ever one.
+        </p>
+      )}
+
+      {thread.staleAt !== null && (
+        <p className="mt-3 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+          What they told us here is more than thirty days old. Openings and
+          waitlists move.
+        </p>
+      )}
+
+      {thread.unansweredLabels.length > 0 && (
         <p className="mt-3 text-[15px]">
           Still unanswered:{" "}
-          <span className="font-medium">{thread.unanswered.join(", ")}</span>
+          <span className="font-medium">
+            {thread.unansweredLabels.join(", ")}
+          </span>
         </p>
       )}
 

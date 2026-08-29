@@ -3,6 +3,8 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtDate } from "./severity";
 import {
+  answerAge,
+  federalStaffing,
   fmtCost,
   fmtMoney,
   fmtTime,
@@ -150,6 +152,14 @@ function Availability({ row }: { row: BoardRow }) {
             <span className="text-[#5b6570] dark:text-[#9aa4ad]">
               (their figure, not the federal one)
             </span>
+            {federalStaffing(row) && (
+              <>
+                <br />
+                <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+                  Federal record: {federalStaffing(row)}
+                </span>
+              </>
+            )}
           </li>
         )}
         {row.oneTimeFee !== null && (
@@ -163,6 +173,16 @@ function Availability({ row }: { row: BoardRow }) {
         </p>
       )}
 
+      {/* An emailed answer with a shelf life. Once the monthly sweep has
+          marked it, the row says so in words rather than in a timestamp a
+          reader has to do arithmetic on. */}
+      {row.stale && (
+        <p className="mt-2 rounded border border-[#d8dce1] px-2 py-1 text-[14px] dark:border-[#2b3236]">
+          This was true {answerAge(row)}. Openings and waitlists move — worth
+          asking again.
+        </p>
+      )}
+
       <p className="mt-2 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
         Reported by the facility
         {row.lastInboundAt ? `, ${fmtTime(row.lastInboundAt)}` : ""}
@@ -170,6 +190,33 @@ function Availability({ row }: { row: BoardRow }) {
         {lowConfidence(row.confidence) ? " · answer was vague" : ""}
       </p>
     </div>
+  );
+}
+
+/**
+ * The rounds counter.
+ *
+ * One round is a letter and its answer. Two means the agent read what came
+ * back, decided the family was still owed something, and wrote again in the
+ * same thread without anyone asking it to — which is the single most useful
+ * thing this product does, so it says so rather than showing a number.
+ */
+function Rounds({ row }: { row: BoardRow }) {
+  if (row.rounds < 2) return null;
+  return (
+    <span
+      className="rounded border border-[#14171a] px-1.5 py-0.5 font-medium text-[#14171a] dark:border-[#e8ebee] dark:text-[#e8ebee]"
+      title={
+        row.followUpReason === "low_confidence"
+          ? "Their first reply was too vague to plan around, so we asked again for a figure."
+          : "They left one of the five questions unanswered, so we asked again in the same thread."
+      }
+    >
+      {row.rounds} rounds
+      {row.followUpReason === "low_confidence"
+        ? " · asked for a figure"
+        : " · asked again"}
+    </span>
   );
 }
 
@@ -195,6 +242,12 @@ function Row({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#d8dce1] px-4 py-2 text-[13px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+        <Rounds row={row} />
+        {row.nudgeCount > 0 && (
+          <span title="One polite note after three days of silence. Never a second one.">
+            Nudged once
+          </span>
+        )}
         {row.simulated && (
           <span className="rounded border border-[#d8dce1] px-1.5 py-0.5 font-medium dark:border-[#2b3236]">
             Simulated reply
@@ -222,6 +275,114 @@ function Row({
   );
 }
 
+/**
+ * What changed in the federal record since this family shortlisted.
+ *
+ * The monthly CMS refresh raises these. It is the one place on the board where
+ * red is used for something other than a citation count, and it is the same
+ * meaning: a resident was hurt, and it was published after you last looked.
+ */
+function Alerts({
+  alerts,
+}: {
+  alerts: {
+    id: string;
+    facilityName: string;
+    kind: string;
+    tagDescription: string;
+    surveyDate: number;
+    detectedAt: number;
+  }[];
+}) {
+  if (alerts.length === 0) return null;
+  return (
+    <section
+      aria-label="New findings since you shortlisted"
+      className="mt-6 rounded border border-[#b3241c] p-4 dark:border-[#7a1410]"
+    >
+      <h3 className="text-[16px] font-semibold text-[#b3241c] dark:text-[#ff8a80]">
+        New in the federal record since you shortlisted
+      </h3>
+      <ul className="mt-2 space-y-2 text-[15px]">
+        {alerts.map((a) => (
+          <li key={a.id}>
+            <span className="font-medium">{a.facilityName}</span> was cited for{" "}
+            {a.tagDescription.replace(/\.$/, "")}.{" "}
+            <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+              {a.kind === "new_immediate_jeopardy"
+                ? "Immediate jeopardy to residents"
+                : "A resident was actually harmed"}
+              . Inspected {fmtDate(a.surveyDate)}, published since you last
+              looked.
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * What this search cost us, in dollars.
+ *
+ * No credits were provided and the budget is real, so this is not a vanity
+ * figure — it is the number that decided which model reads a reply and which
+ * one drafts the letter. Showing it is the honest version of claiming to care
+ * about it.
+ */
+function Spend({ searchId }: { searchId: Id<"searches"> }) {
+  const spend = useQuery(api.usage.spendForSearch, { searchId });
+  if (!spend || spend.calls === 0) return null;
+
+  const dollars = spend.costUsd < 0.01 ? "<$0.01" : `$${spend.costUsd.toFixed(2)}`;
+  const top = spend.byPurpose.slice(0, 3);
+
+  return (
+    <p className="mt-8 border-t border-[#d8dce1] pt-4 text-[13px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+      This search has cost{" "}
+      <span className="font-medium text-[#14171a] tabular-nums dark:text-[#e8ebee]">
+        {spend.fullyPriced ? dollars : "an unpriced amount"}
+      </span>{" "}
+      in model calls — {spend.calls} call{spend.calls === 1 ? "" : "s"},{" "}
+      {spend.totalTokens.toLocaleString()} tokens
+      {spend.cachedInputTokens > 0 &&
+        `, ${spend.cachedInputTokens.toLocaleString()} of them billed at the cached rate`}
+      {top.length > 0 && (
+        <>
+          {" "}
+          ({top.map((b) => `${humanPurpose(b.purpose)} ${b.calls}`).join(", ")})
+        </>
+      )}
+      . Models: {spend.models.join(", ")}.
+      {!spend.fullyPriced &&
+        ` ${spend.unpricedCalls} call${spend.unpricedCalls === 1 ? "" : "s"} used a model we have no published rate for, so its tokens are counted and its cost is not.`}{" "}
+      We pay for this ourselves and take no money from facilities.
+    </p>
+  );
+}
+
+/** Task names are internal. These are what they are. */
+function humanPurpose(purpose: string): string {
+  switch (purpose) {
+    case "emailReplyParse":
+      return "reading replies";
+    case "emailDraft":
+      return "writing letters";
+    case "agentLoop":
+      return "deciding what to ask";
+    case "deficiencyTranslation":
+      return "translating citations";
+    case "facilityRiskSummary":
+      return "summarising records";
+    case "facilityNewsScan":
+      return "checking local news";
+    case "facilityRanking":
+      return "ranking";
+    default:
+      return purpose;
+  }
+}
+
 export function Board({
   searchId,
   onOpenThread,
@@ -246,7 +407,7 @@ export function Board({
     );
   }
 
-  const { search, counters, rows } = board;
+  const { search, counters, rows, alerts } = board;
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-8">
@@ -287,6 +448,8 @@ export function Board({
         <Counter value={counters.flagged} label="flagged for harm" alarming />
       </div>
 
+      <Alerts alerts={alerts} />
+
       <div className="mt-4 hidden gap-8 px-4 text-[13px] font-medium uppercase tracking-wide text-[#5b6570] sm:grid sm:grid-cols-2 dark:text-[#9aa4ad]">
         <span>Safety · the federal inspection record</span>
         <span>Availability · what the facility told us</span>
@@ -307,6 +470,8 @@ export function Board({
           ))}
         </ul>
       )}
+
+      <Spend searchId={searchId} />
     </section>
   );
 }

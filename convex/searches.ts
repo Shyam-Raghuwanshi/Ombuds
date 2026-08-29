@@ -286,6 +286,115 @@ export const queueCampaign = internalMutation({
 });
 
 /**
+ * Queue one more facility onto a campaign that already exists.
+ *
+ * The single-facility form of `queueCampaign`, and it shares its rules: the
+ * send guard decides the recipient, a facility with no discovered address keeps
+ * its row rather than being dropped, and a facility already on the shortlist is
+ * a no-op rather than a second letter.
+ *
+ * Its persona is drawn from where the roster has got to on this search, so a
+ * facility added mid-campaign behaves like the others rather than always being
+ * the same one.
+ */
+export const queueOneFacility = internalMutation({
+  args: {
+    searchId: v.id("searches"),
+    ccn: v.string(),
+    demoInboxId: v.string(),
+    demoInboxEmail: v.string(),
+  },
+  returns: v.object({
+    queued: v.boolean(),
+    reason: v.string(),
+    facilityName: v.optional(v.string()),
+    inquiryId: v.optional(v.id("inquiries")),
+  }),
+  handler: async (ctx, args) => {
+    const search = await ctx.db.get(args.searchId);
+    if (!search) return { queued: false, reason: "no_such_search" };
+
+    const facility = await ctx.db
+      .query("facilities")
+      .withIndex("by_ccn", (q) => q.eq("ccn", args.ccn))
+      .unique();
+    if (!facility) {
+      // We do not invent a facility to write to. If CMS has never been asked
+      // for this CCN, the honest answer is that we do not know this place.
+      return { queued: false, reason: "facility_not_ingested" };
+    }
+
+    const existing = await ctx.db
+      .query("inquiries")
+      .withIndex("by_search", (q) => q.eq("searchId", args.searchId))
+      .collect();
+    const already = existing.find((i) => i.ccn === args.ccn);
+    if (already) {
+      return {
+        queued: false,
+        reason: "already_on_this_shortlist",
+        facilityName: facility.name,
+        inquiryId: already._id,
+      };
+    }
+
+    const recipient = resolveRecipient({
+      facilityEmail: facility.contactEmail ?? null,
+      demoInboxEmail: args.demoInboxEmail,
+    });
+    const hasEmail = Boolean(facility.contactEmail);
+    const persona =
+      recipient.simulated && hasEmail
+        ? PERSONAS[PERSONA_ROSTER[existing.length % PERSONA_ROSTER.length]]
+        : null;
+
+    const inquiryId = await ctx.db.insert("inquiries", {
+      searchId: args.searchId,
+      ccn: facility.ccn,
+      facilityName: facility.name,
+      toEmail: hasEmail ? recipient.to : "",
+      status: hasEmail ? "queued" : "no_response",
+      nudgeCount: 0,
+      rounds: 0,
+      unanswered: [],
+      simulated: recipient.simulated && hasEmail,
+      persona: persona?.key,
+      intendedTo: recipient.intendedTo ?? undefined,
+      noEmailFound: !hasEmail,
+    });
+
+    if (!hasEmail) {
+      return {
+        queued: false,
+        reason: "no_email_address_published",
+        facilityName: facility.name,
+        inquiryId,
+      };
+    }
+
+    if (persona) {
+      await ctx.db.insert("simulatedFacilities", {
+        searchId: args.searchId,
+        ccn: facility.ccn,
+        inboxId: args.demoInboxId,
+        persona: persona.key,
+        responseDelayMs: replyDelayMs(),
+      });
+    }
+
+    await inquiryPool.enqueueAction(ctx, internal.email.sendInquiryWorker, {
+      inquiryId,
+    });
+    return {
+      queued: true,
+      reason: "queued",
+      facilityName: facility.name,
+      inquiryId,
+    };
+  },
+});
+
+/**
  * Write to every facility on the shortlist.
  *
  * Drafts the family's letter once, then fans out through the bounded pool with
@@ -383,7 +492,19 @@ const boardRow = v.object({
   // Availability — what the facility told us, and when
   status: v.string(),
   deliveryStatus: v.union(v.string(), v.null()),
+  // How many times we have written to them. Two means the agent read a reply,
+  // decided the family was still owed an answer, and asked again on its own.
   rounds: v.number(),
+  followUpReason: v.union(v.string(), v.null()),
+  nudgeCount: v.number(),
+  // Set once what they told us is more than thirty days old.
+  stale: v.boolean(),
+  answeredAt: v.union(v.number(), v.null()),
+  // The federal staffing figure, so the facility's own claim about who is on
+  // the floor at 3am can be read next to what CMS publishes for that building.
+  // Null means CMS published no figure — never zero.
+  rnHoursWeekend: v.union(v.number(), v.null()),
+  specialFocusStatus: v.union(v.string(), v.null()),
   hasOpening: v.union(v.boolean(), v.null()),
   monthlyCostLow: v.union(v.number(), v.null()),
   monthlyCostHigh: v.union(v.number(), v.null()),
@@ -441,7 +562,25 @@ export const board = query({
         bounced: v.number(),
         awaiting: v.number(),
         clarifying: v.number(),
+        // Conversations the agent took to a second round on its own.
+        followedUp: v.number(),
+        nudged: v.number(),
       }),
+      // Harm-level citations that appeared in the federal record AFTER this
+      // family shortlisted the facility. Raised by the monthly CMS refresh.
+      alerts: v.array(
+        v.object({
+          id: v.id("facilityAlerts"),
+          ccn: v.string(),
+          facilityName: v.string(),
+          kind: v.string(),
+          tag: v.string(),
+          tagDescription: v.string(),
+          scopeSeverity: v.string(),
+          surveyDate: v.number(),
+          detectedAt: v.number(),
+        }),
+      ),
       rows: v.array(boardRow),
     }),
   ),
@@ -451,6 +590,10 @@ export const board = query({
 
     const inquiries = await ctx.db
       .query("inquiries")
+      .withIndex("by_search", (q) => q.eq("searchId", searchId))
+      .collect();
+    const alerts = await ctx.db
+      .query("facilityAlerts")
       .withIndex("by_search", (q) => q.eq("searchId", searchId))
       .collect();
 
@@ -500,6 +643,12 @@ export const board = query({
         status: inquiry.status,
         deliveryStatus: inquiry.deliveryStatus ?? null,
         rounds: inquiry.rounds,
+        followUpReason: inquiry.followUpReason ?? null,
+        nudgeCount: inquiry.nudgeCount,
+        stale: inquiry.staleAt !== undefined,
+        answeredAt: inquiry.answeredAt ?? null,
+        rnHoursWeekend: facility?.rnHoursWeekend ?? null,
+        specialFocusStatus: facility?.specialFocusStatus ?? null,
         hasOpening: inquiry.hasOpening ?? null,
         monthlyCostLow: inquiry.monthlyCostLow ?? null,
         monthlyCostHigh: inquiry.monthlyCostHigh ?? null,
@@ -566,7 +715,23 @@ export const board = query({
           ["queued", "sent", "delivered"].includes(r.status),
         ).length,
         clarifying: rows.filter((r) => r.status === "clarifying").length,
+        followedUp: rows.filter((r) => r.rounds > 1).length,
+        nudged: rows.filter((r) => r.nudgeCount > 0).length,
       },
+      alerts: alerts
+        .filter((a) => a.dismissedAt === undefined)
+        .sort((a, b) => b.detectedAt - a.detectedAt)
+        .map((a) => ({
+          id: a._id,
+          ccn: a.ccn,
+          facilityName: a.facilityName,
+          kind: a.kind,
+          tag: a.tag,
+          tagDescription: a.tagDescription,
+          scopeSeverity: a.scopeSeverity,
+          surveyDate: a.surveyDate,
+          detectedAt: a.detectedAt,
+        })),
       rows,
     };
   },
