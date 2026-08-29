@@ -1,7 +1,8 @@
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { Provenance } from "./FacilityDetail";
+
 import { fmtDate } from "./severity";
+import { ErrorState, Loading, Provenance } from "./ui";
 
 /**
  * Recent local reporting, found with Firecrawl search.
@@ -30,7 +31,7 @@ const CONCERN_LABEL: Record<string, string> = {
 
 /** Weight, not colour — see the note above about red. */
 const CONCERN_STYLE: Record<string, string> = {
-  informational: "text-[#5b6570] dark:text-[#9aa4ad]",
+  informational: "text-muted",
   concerning: "font-medium",
   serious: "font-semibold",
 };
@@ -47,24 +48,28 @@ export function NewsPanel({
   return (
     <section className="mt-8">
       <h2 className="text-xl font-semibold">Recent local reporting</h2>
-      <p className="mt-1 max-w-3xl text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-1 max-w-3xl text-[16px] text-muted">
         Federal inspection results take months to be published. Local news does
         not. This is what the press has reported about this facility in the past
         year.
       </p>
 
-      {error && <p className="mt-3 max-w-3xl text-[15px]">{error}</p>}
+      {error && (
+        <div className="mt-3 max-w-3xl">
+          <ErrorState title="We could not search local news." detail={error} />
+        </div>
+      )}
 
       {news === undefined && (
-        <p className="mt-3 text-[#5b6570] dark:text-[#9aa4ad]">
-          Searching local news…
-        </p>
+        <div className="mt-3">
+          <Loading what="Searching local news from the past year…" />
+        </div>
       )}
 
       {news && !error && news.scanned && news.items.length === 0 && (
         // Deliberately distinct from "we have not looked yet". Finding nothing
         // is a real answer and a family should be able to read it as one.
-        <p className="mt-3 max-w-3xl text-[15px]">
+        <p className="mt-3 max-w-3xl text-[16px]">
           We searched local news from the past year and found no coverage of
           this facility.
           {news.scannedAt ? ` Checked ${fmtDate(news.scannedAt)}.` : ""}
@@ -72,7 +77,7 @@ export function NewsPanel({
       )}
 
       {news && !news.scanned && !error && (
-        <p className="mt-3 text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-3 text-muted">
           Not searched yet.
         </p>
       )}
@@ -83,10 +88,10 @@ export function NewsPanel({
             {news.items.map((item) => (
               <li
                 key={item._id}
-                className="border-t border-[#d8dce1] py-4 dark:border-[#2b3236]"
+                className="border-t border-rule py-4"
               >
                 <p
-                  className={`text-[13px] uppercase tracking-wide ${
+                  className={`text-[14px] uppercase tracking-wide ${
                     CONCERN_STYLE[item.concernLevel] ?? ""
                   }`}
                 >

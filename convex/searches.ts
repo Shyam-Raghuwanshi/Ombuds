@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   query,
@@ -237,12 +238,13 @@ export const queueCampaign = internalMutation({
       const hasEmail = Boolean(facility.contactEmail);
       if (!hasEmail) noEmail += 1;
 
+      const rosterIndex = personaIndex;
       const persona =
         recipient.simulated && hasEmail
           ? PERSONAS[PERSONA_ROSTER[personaIndex++ % PERSONA_ROSTER.length]]
           : null;
 
-      const inquiryId = await ctx.db.insert("inquiries", {
+      await ctx.db.insert("inquiries", {
         searchId: args.searchId,
         ccn: facility.ccn,
         facilityName: facility.name,
@@ -263,25 +265,58 @@ export const queueCampaign = internalMutation({
           ccn: facility.ccn,
           inboxId: args.demoInboxId,
           persona: persona.key,
-          responseDelayMs: replyDelayMs(),
+          responseDelayMs: replyDelayMs(rosterIndex),
         });
       }
 
-      // Only rows we have an address for are handed to the pool. A facility
-      // with no address is left alone rather than emailed nowhere.
-      if (hasEmail) {
-        await inquiryPool.enqueueAction(
-          ctx,
-          internal.email.sendInquiryWorker,
-          { inquiryId },
-          { runAfter: queued * SEND_STAGGER_MS },
-        );
-        queued += 1;
-      }
+      // Only rows we have an address for will be written to. A facility with
+      // no address is left alone rather than emailed nowhere.
+      //
+      // Nothing is handed to the pool here. The sends are dispatched in a
+      // second pass, after the letter exists — see `dispatchCampaign`. Writing
+      // the rows first is what puts twelve real inspection records on the
+      // family's screen about a second after they click, instead of after a
+      // model has finished drafting.
+      if (hasEmail) queued += 1;
     }
 
     await ctx.db.patch(args.searchId, { campaignStartedAt: Date.now() });
     return { queued, noEmail };
+  },
+});
+
+/**
+ * Hand the queued rows to the pool, once the letter they carry exists.
+ *
+ * Split out from `queueCampaign` for the cold open. The rows are written
+ * first and appear on the board immediately with their full inspection record;
+ * the letter is drafted while the family is already reading them; only then
+ * does anything get sent. The stagger is unchanged — twelve conversations
+ * start over about fifteen seconds so the board fills in rather than blinking
+ * on all at once.
+ */
+export const dispatchCampaign = internalMutation({
+  args: { searchId: v.id("searches") },
+  returns: v.object({ dispatched: v.number() }),
+  handler: async (ctx, { searchId }) => {
+    const queued = await ctx.db
+      .query("inquiries")
+      .withIndex("by_search_status", (q) =>
+        q.eq("searchId", searchId).eq("status", "queued"),
+      )
+      .collect();
+
+    let dispatched = 0;
+    for (const inquiry of queued) {
+      await inquiryPool.enqueueAction(
+        ctx,
+        internal.email.sendInquiryWorker,
+        { inquiryId: inquiry._id },
+        { runAfter: dispatched * SEND_STAGGER_MS },
+      );
+      dispatched += 1;
+    }
+    return { dispatched };
   },
 });
 
@@ -378,7 +413,7 @@ export const queueOneFacility = internalMutation({
         ccn: facility.ccn,
         inboxId: args.demoInboxId,
         persona: persona.key,
-        responseDelayMs: replyDelayMs(),
+        responseDelayMs: replyDelayMs(existing.length),
       });
     }
 
@@ -401,24 +436,63 @@ export const queueOneFacility = internalMutation({
  * a stagger, so twelve conversations start over about fifteen seconds rather
  * than all in the same instant.
  */
+/**
+ * The campaign, in the order that puts something real on screen soonest.
+ *
+ *   1. Write the rows.    The board fills with twelve facilities and their
+ *                         federal inspection records — no model involved, so
+ *                         this lands about a second after the click.
+ *   2. Draft the letter.  One model call, while the family is already reading.
+ *   3. Dispatch.          Staggered through the bounded pool.
+ *
+ * The old order drafted first, which meant the judge watched a spinner for the
+ * length of a model call before seeing anything at all. Same work, same cost,
+ * and the sixty-second budget in CLAUDE.md section 7.2 is spent on the product
+ * rather than on waiting.
+ */
+export const runCampaign = internalAction({
+  args: { searchId: v.id("searches"), ccns: v.array(v.string()) },
+  returns: v.object({ queued: v.number(), noEmail: v.number() }),
+  handler: async (ctx, { searchId, ccns }): Promise<{ queued: number; noEmail: number }> => {
+    const facilities = await ctx.runQuery(internal.searches.shortlistFacilities, {
+      ccns,
+    });
+    const demoInbox = await demoFacilityInbox(ctx);
+    const result: { queued: number; noEmail: number } = await ctx.runMutation(
+      internal.searches.queueCampaign,
+      {
+        searchId,
+        demoInboxId: demoInbox.inboxId,
+        demoInboxEmail: demoInbox.email,
+        facilities,
+      },
+    );
+
+    // The draft is bounded and writes a canonical letter if the model does not
+    // answer, so it should not throw. It is caught anyway: the rows are already
+    // on the family's screen at this point, and a campaign stranded at "queued"
+    // with no letter and no explanation is the worst state this product has.
+    // Dispatching regardless means the worst case is an unpersonalised letter
+    // rather than twelve conversations that never start.
+    try {
+      await ctx.runAction(internal.email.draftLetter, { searchId });
+    } catch (error) {
+      console.error(`[searches] letter draft failed for ${searchId}: ${error}`);
+      await ctx.runMutation(internal.email.ensureCanonicalDraft, { searchId });
+    }
+
+    await ctx.runMutation(internal.searches.dispatchCampaign, { searchId });
+    return result;
+  },
+});
+
 export const startCampaign = action({
   args: { searchId: v.id("searches"), ccns: v.array(v.string()) },
   returns: v.object({ queued: v.number(), noEmail: v.number() }),
   handler: async (ctx, { searchId, ccns }): Promise<{ queued: number; noEmail: number }> => {
     const owned: boolean = await ctx.runQuery(api.searches.ownsSearch, { searchId });
     if (!owned) throw new Error("not your search");
-
-    await ctx.runAction(internal.email.draftLetter, { searchId });
-    const facilities = await ctx.runQuery(internal.searches.shortlistFacilities, {
-      ccns,
-    });
-    const demoInbox = await demoFacilityInbox(ctx);
-    return ctx.runMutation(internal.searches.queueCampaign, {
-      searchId,
-      demoInboxId: demoInbox.inboxId,
-      demoInboxEmail: demoInbox.email,
-      facilities,
-    });
+    return ctx.runAction(internal.searches.runCampaign, { searchId, ccns });
   },
 });
 
@@ -456,7 +530,12 @@ export const runSampleSearch = action({
       },
     );
 
-    await ctx.runAction(api.searches.startCampaign, {
+    // Handed to the scheduler rather than awaited. The judge's click returns
+    // as soon as the search exists — the board is on screen while the rows,
+    // the letter, and the fan-out are still being written behind it. Awaiting
+    // this here would have spent the first ten seconds of a sixty-second cold
+    // open on a disabled button (CLAUDE.md section 7.2).
+    await ctx.scheduler.runAfter(0, internal.searches.runCampaign, {
       searchId: created.searchId,
       ccns: SAMPLE_CCNS,
     });

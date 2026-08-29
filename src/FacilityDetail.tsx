@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { ContactPanel } from "./ContactPanel";
+import { Empty, Loading, Provenance } from "./ui";
 import { NewsPanel } from "./NewsPanel";
 import { useDiscovery } from "./useDiscovery";
 import { useLazyTranslate } from "./useLazyTranslate";
@@ -37,14 +38,6 @@ type Citation = {
   full: string | null;
 };
 
-export function Provenance({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-1 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
-      {children}
-    </p>
-  );
-}
-
 /**
  * The only red banner in the product. Rendered when, and only when, the
  * federal record contains a citation at severity J, K, or L — a finding that
@@ -60,19 +53,19 @@ function ImmediateJeopardyBanner({ citations }: { citations: Citation[] }) {
   return (
     <section
       role="alert"
-      className="mb-8 rounded border-l-4 border-[#7a1410] bg-[#b3241c] px-5 py-4 text-white"
+      className="surface-harm mb-8 rounded border-l-4 border-harm-edge bg-harm-solid px-5 py-4 text-on-harm"
     >
       <h2 className="text-lg font-semibold">
         Federal inspectors found immediate jeopardy here
       </h2>
-      <p className="mt-1 max-w-3xl text-[15px] leading-relaxed text-white/95">
+      <p className="mt-1 max-w-3xl text-[16px] leading-relaxed text-on-harm">
         Immediate jeopardy is the most serious finding CMS issues. It means
         inspectors concluded residents were likely to suffer serious injury,
         harm, or death. This facility has {citations.length}{" "}
         {citations.length === 1 ? "such finding" : "such findings"} on record,
         from {years.join(", ")}.
       </p>
-      <ul className="mt-3 space-y-1 text-[15px] text-white/95">
+      <ul className="mt-3 space-y-1 text-[16px] text-on-harm">
         {citations.map((c) => (
           <li key={c._id}>
             <span className="font-medium">{fmtDate(c.surveyDate)}</span> —{" "}
@@ -80,7 +73,7 @@ function ImmediateJeopardyBanner({ citations }: { citations: Citation[] }) {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[13px] text-white/80">
+      <p className="mt-3 text-[14px] text-on-harm">
         Source: CMS Health Deficiencies, federal inspection record.
       </p>
     </section>
@@ -90,8 +83,8 @@ function ImmediateJeopardyBanner({ citations }: { citations: Citation[] }) {
 function Stars({ value, label }: { value: number; label: string }) {
   return (
     <div>
-      <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">{label}</dt>
-      <dd className="text-[15px] font-medium">
+      <dt className="text-[15px] text-muted">{label}</dt>
+      <dd className="text-[16px] font-medium">
         {value > 0 ? (
           <>
             {value} <span aria-hidden>{"★".repeat(value)}</span>
@@ -100,7 +93,7 @@ function Stars({ value, label }: { value: number; label: string }) {
         ) : (
           // A Special Focus Facility has "" in this column. Zero stars would
           // be a lie of a different kind.
-          <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+          <span className="text-muted">
             not published by CMS
           </span>
         )}
@@ -112,14 +105,14 @@ function Stars({ value, label }: { value: number; label: string }) {
 function CitationRow({ c }: { c: Citation }) {
   const harm = c.harmLevel as HarmLevel;
   return (
-    <li className="border-t border-[#d8dce1] py-4 dark:border-[#2b3236]">
+    <li className="border-t border-rule py-4">
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={`rounded border px-2 py-0.5 text-[13px] font-medium ${HARM_CHIP[harm]}`}
+          className={`rounded border px-2 py-0.5 text-[14px] font-medium ${HARM_CHIP[harm]}`}
         >
           {HARM_LABEL[harm]}
         </span>
-        <span className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <span className="text-[15px] text-muted">
           {SPREAD_LABEL[c.spread]} · Inspected {fmtDate(c.surveyDate)}
           {c.isComplaint ? " · Found after a complaint" : ""}
         </span>
@@ -128,17 +121,17 @@ function CitationRow({ c }: { c: Citation }) {
       {c.full ? (
         <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{c.full}</p>
       ) : (
-        <p className="mt-2 max-w-3xl text-[16px] leading-relaxed text-[#5b6570] dark:text-[#9aa4ad]">
-          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-[#d8dce1] align-middle dark:bg-[#2b3236]" />{" "}
+        <p className="mt-2 max-w-3xl text-[16px] leading-relaxed text-muted">
+          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-rule-strong align-middle" />{" "}
           Translating this finding into plain English…
         </p>
       )}
 
       <details className="mt-2">
-        <summary className="cursor-pointer text-[13px] text-[#5b6570] underline underline-offset-2 dark:text-[#9aa4ad]">
+        <summary className="cursor-pointer text-[16px] text-muted underline underline-offset-2">
           What the federal record says
         </summary>
-        <p className="mt-1 max-w-3xl text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-1 max-w-3xl text-[16px] text-muted">
           {c.tag} · scope/severity {c.scopeSeverity} — {c.tagDescription}
           {c.correctionDate
             ? ` Facility's date of correction: ${fmtDate(c.correctionDate)}.`
@@ -166,17 +159,26 @@ export function FacilityDetail({
   const { newsError } = useDiscovery(ccn, detail != null);
 
   if (detail === undefined) {
-    return <p className="px-6 py-20 text-[#5b6570]">Loading the record…</p>;
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-20">
+        <Loading what="Loading this facility's federal inspection record…" />
+      </div>
+    );
   }
   if (detail === null) {
     return (
-      <div className="px-6 py-20">
-        <p className="text-[#5b6570]">
-          No facility on file for CCN {ccn}. It may not be Medicare or Medicaid
-          certified, in which case there is no federal inspection record to read.
-        </p>
+      <div className="mx-auto max-w-4xl px-6 py-20">
+        <Empty title={`No facility on file for CCN ${ccn}.`}>
+          It may not be Medicare or Medicaid certified — assisted living and
+          adult homes are licensed by the states and appear nowhere in the
+          federal data — in which case there is no federal inspection record to
+          read.
+        </Empty>
         {onBack && (
-          <button onClick={onBack} className="mt-4 underline underline-offset-4">
+          <button
+            onClick={onBack}
+            className="mt-4 rounded border border-rule-strong px-4 py-2 text-[16px] font-medium"
+          >
             Back
           </button>
         )}
@@ -191,7 +193,7 @@ export function FacilityDetail({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-6 text-[15px] underline underline-offset-4"
+          className="mb-6 text-[16px] underline underline-offset-4"
         >
           ← All three facilities
         </button>
@@ -200,31 +202,31 @@ export function FacilityDetail({
       <ImmediateJeopardyBanner citations={immediateJeopardy as Citation[]} />
 
       <h1 className="text-3xl font-semibold leading-tight">{facility.name}</h1>
-      <p className="mt-1 text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-2 text-[16px] text-muted">
         {facility.city}, {facility.state} {facility.zip} · {facility.phone} ·{" "}
         {facility.certifiedBeds} certified beds · {facility.ownershipType}
       </p>
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-y border-[#d8dce1] py-5 sm:grid-cols-4 dark:border-[#2b3236]">
+      <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-y border-rule py-5 sm:grid-cols-4">
         <Stars value={facility.overallRating} label="CMS overall rating" />
         <Stars
           value={facility.healthInspectionRating}
           label="Health inspection rating"
         />
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[15px] text-muted">
             Findings on record
           </dt>
-          <dd className="text-[15px] font-medium">{counts.total}</dd>
+          <dd className="text-[16px] font-medium">{counts.total}</dd>
         </div>
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[15px] text-muted">
             Findings that harmed a resident
           </dt>
           <dd
-            className={`text-[15px] font-medium ${
+            className={`text-[16px] font-medium ${
               counts.actualHarm + counts.immediateJeopardy > 0
-                ? "text-[#b3241c] dark:text-[#ff8a80]"
+                ? "text-harm"
                 : ""
             }`}
           >
@@ -255,7 +257,7 @@ export function FacilityDetail({
             </Provenance>
           </>
         ) : (
-          <p className="mt-2 text-[#5b6570] dark:text-[#9aa4ad]">
+          <p className="mt-2 text-[16px] text-muted">
             Reading {counts.total} findings…
           </p>
         )}
@@ -264,7 +266,7 @@ export function FacilityDetail({
       <section className="mt-8">
         <h2 className="text-xl font-semibold">
           Findings, most serious first
-          <span className="ml-2 text-[15px] font-normal text-[#5b6570] dark:text-[#9aa4ad]">
+          <span className="ml-2 text-[16px] font-normal text-muted">
             {counts.translated} of {worstFirst.length} translated
           </span>
         </h2>

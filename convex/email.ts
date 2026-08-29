@@ -141,6 +141,20 @@ function threadAnchor(
 /** Sends are staggered so the board fills in rather than blinking on at once. */
 const SEND_STAGGER_MS = 1_200;
 
+/**
+ * How long we will wait for a model to write the family's letter before
+ * sending the canonical one instead.
+ *
+ * Nothing else in the campaign can start until this returns — twelve
+ * facilities are waiting on one letter — so it is the single point where a
+ * slow or rate-limited provider could eat the whole sixty-second cold open
+ * (CLAUDE.md section 7.2). Twelve seconds is long enough for a normal call and
+ * short enough that a bad one costs a fraction of the budget. The canonical
+ * letter asks the same five questions; it is simply not personalised, and the
+ * thread view says so by naming `canonical-fallback` as its author.
+ */
+const LETTER_DRAFT_DEADLINE_MS = 12_000;
+
 /** How long we keep asking the component what happened to an outbound message. */
 const RECONCILE_DELAYS_MS = [2_000, 6_000, 15_000, 40_000];
 
@@ -308,6 +322,44 @@ export const saveLetterDraft = internalMutation({
 });
 
 /**
+ * Guarantee this search has a letter, without calling anything.
+ *
+ * The backstop for the campaign: if the drafting action died outright rather
+ * than falling back — killed mid-flight, or the search vanished under it — the
+ * inquiry rows are already on the family's screen and the send worker refuses
+ * to run without a draft, so the whole campaign would sit at "queued" with
+ * nothing to explain it. This writes the canonical letter and lets the sends
+ * proceed. It never overwrites a real draft.
+ */
+export const ensureCanonicalDraft = internalMutation({
+  args: { searchId: v.id("searches") },
+  returns: v.object({ wrote: v.boolean() }),
+  handler: async (ctx, { searchId }) => {
+    const search = await ctx.db.get(searchId);
+    if (!search) return { wrote: false };
+    if (search.letterDraft) return { wrote: false };
+
+    const fb = fallbackLetter({
+      careLevel: search.careLevel,
+      tourDates: tourWindow(Date.now()),
+      city: `ZIP ${search.zip}`,
+      signOff: "",
+    });
+    await ctx.db.patch(searchId, {
+      letterDraft: {
+        subject: fb.subject,
+        opening: fb.opening,
+        questions: fb.questions,
+        closing: fb.closing,
+        model: "canonical-fallback",
+        draftedAt: Date.now(),
+      },
+    });
+    return { wrote: true };
+  },
+});
+
+/**
  * Write the family's opening letter, once per search.
  *
  * Only the facility's name differs between the twelve copies that go out, so
@@ -380,6 +432,7 @@ export const draftLetter = internalAction({
         schemaDescription: "A family's opening letter to a care facility.",
         ctx,
         attribution: { searchId },
+        deadlineMs: LETTER_DRAFT_DEADLINE_MS,
       });
       subject = result.object.subject;
       opening = result.object.opening;

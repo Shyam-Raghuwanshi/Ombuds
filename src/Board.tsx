@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtDate } from "./severity";
+import { Empty, Loading } from "./ui";
 import {
   answerAge,
   federalStaffing,
@@ -22,76 +23,103 @@ import {
  * Nothing on this screen polls: every number is a Convex query subscription, so
  * a reply that lands while the family is reading moves the counter and fills in
  * a row underneath their eyes.
+ *
+ * The two halves are never allowed to look alike. The left is what federal
+ * inspectors found and carries the date they found it; the right is what a
+ * facility said about itself and carries the date they said it. On a phone the
+ * halves stack, so each one grows a heading — on a wide screen the column
+ * headings above the list do that job instead.
  */
+
+function ColumnLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 text-[14px] font-medium uppercase tracking-wide text-muted sm:hidden">
+      {children}
+    </p>
+  );
+}
 
 function Counter({
   value,
   label,
-  alarming,
+  harm,
 }: {
   value: number;
   label: string;
-  alarming?: boolean;
+  /** Only the harm counter may be coloured, and only when it is non-zero. */
+  harm?: boolean;
 }) {
   return (
     <div className="flex items-baseline gap-2">
       <span
-        className={`text-[22px] font-semibold tabular-nums ${
-          alarming && value > 0 ? "text-[#b3241c] dark:text-[#ff8a80]" : ""
+        className={`text-[24px] font-semibold tabular-nums ${
+          harm && value > 0 ? "text-harm" : ""
         }`}
       >
         {value}
       </span>
-      <span className="text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
-        {label}
-      </span>
+      <span className="text-[15px] text-muted">{label}</span>
     </div>
   );
 }
 
 /** The left half: the federal record, and the date it was inspected. */
-function Safety({ row }: { row: BoardRow }) {
+function Safety({
+  row,
+  onOpenFacility,
+}: {
+  row: BoardRow;
+  onOpenFacility: (ccn: string) => void;
+}) {
   const flagged = row.actualHarm > 0 || row.immediateJeopardy > 0;
   return (
     <div className="min-w-0">
-      <h3 className="text-[16px] font-semibold leading-snug">
-        {row.facilityName}
+      <ColumnLabel>Safety · the federal inspection record</ColumnLabel>
+
+      <h3 className="text-[18px] font-semibold leading-snug">
+        <button
+          onClick={() => onOpenFacility(row.ccn)}
+          className="text-left underline underline-offset-4"
+        >
+          {row.facilityName}
+        </button>
       </h3>
-      <p className="mt-0.5 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-1 text-[16px] text-muted">
         {row.city}, {row.state}
         {row.overallRating > 0
-          ? ` · ${row.overallRating}★ CMS overall`
+          ? ` · ${row.overallRating} of 5 stars, CMS overall`
           : " · no CMS rating published"}
       </p>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {row.immediateJeopardy > 0 && (
-          <span className="rounded border border-[#7a1410] bg-[#b3241c] px-2 py-0.5 text-[13px] font-semibold text-white">
+          <span className="surface-harm rounded border border-harm-edge bg-harm-solid px-2 py-0.5 text-[14px] font-semibold text-on-harm">
             {row.immediateJeopardy} immediate jeopardy
           </span>
         )}
         {row.actualHarm > 0 && (
-          <span className="rounded border border-[#b3241c] bg-[#fdf0ef] px-2 py-0.5 text-[13px] font-medium text-[#b3241c] dark:border-[#7a1410] dark:bg-[#2a1210] dark:text-[#ff8a80]">
-            {row.actualHarm} resident{row.actualHarm === 1 ? "" : "s"} actually
-            harmed
+          <span className="rounded border border-harm-edge bg-harm-soft px-2 py-0.5 text-[14px] font-medium text-harm">
+            {row.actualHarm} finding{row.actualHarm === 1 ? "" : "s"} that
+            harmed a resident
           </span>
         )}
         {row.abuseIcon && (
-          <span className="rounded border border-[#b3241c] px-2 py-0.5 text-[13px] font-medium text-[#b3241c] dark:border-[#7a1410] dark:text-[#ff8a80]">
+          <span className="rounded border border-harm-edge px-2 py-0.5 text-[14px] font-medium text-harm">
             CMS abuse flag
           </span>
         )}
         {!flagged && !row.abuseIcon && (
-          <span className="rounded border border-[#d8dce1] px-2 py-0.5 text-[13px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+          <span className="rounded border border-rule px-2 py-0.5 text-[14px] text-muted">
             No harm on record
           </span>
         )}
       </div>
 
-      <p className="mt-2 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-2 text-[14px] text-muted">
+        <span className="font-medium">Federal record</span> ·{" "}
         {row.latestSurveyDate
-          ? `Federal record · inspected ${fmtDate(row.latestSurveyDate)}`
-          : "Federal record · CMS Provider Data Catalog"}
+          ? `inspected ${fmtDate(row.latestSurveyDate)}`
+          : "CMS Provider Data Catalog"}
       </p>
     </div>
   );
@@ -106,19 +134,18 @@ function Availability({ row }: { row: BoardRow }) {
   if (!answered) {
     return (
       <div className="min-w-0">
-        <p className="text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
-          {waitingLabel(row)}
-        </p>
+        <ColumnLabel>Availability · what the facility told us</ColumnLabel>
+        <p className="text-[16px] text-muted">{waitingLabel(row)}</p>
         {row.noEmailFound && row.phone && (
-          <p className="mt-1 text-[14px]">
-            No address on their website — call{" "}
+          <p className="mt-2 text-[16px]">
+            No address published on their website — call{" "}
             <a className="underline underline-offset-4" href={`tel:${row.phone}`}>
               {row.phone}
             </a>
           </p>
         )}
         {row.status === "clarifying" && row.unansweredLabels.length > 0 && (
-          <p className="mt-1 text-[14px]">
+          <p className="mt-2 text-[16px]">
             Following up on {row.unansweredLabels.join(", ").toLowerCase()}
           </p>
         )}
@@ -140,22 +167,22 @@ function Availability({ row }: { row: BoardRow }) {
 
   return (
     <div className="min-w-0">
-      <p className="text-[16px] font-semibold leading-snug">
+      <ColumnLabel>Availability · what the facility told us</ColumnLabel>
+
+      <p className="text-[18px] font-semibold leading-snug">
         {headline || "Replied"}
       </p>
 
-      <ul className="mt-1 space-y-0.5 text-[14px]">
+      <ul className="mt-2 space-y-1 text-[16px]">
         {waitlist && <li>{waitlist}</li>}
         {row.staffRatioNights && (
           <li>
             Nights {row.staffRatioNights}{" "}
-            <span className="text-[#5b6570] dark:text-[#9aa4ad]">
-              (their figure, not the federal one)
-            </span>
+            <span className="text-muted">(their figure, not the federal one)</span>
             {federalStaffing(row) && (
               <>
                 <br />
-                <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+                <span className="text-muted">
                   Federal record: {federalStaffing(row)}
                 </span>
               </>
@@ -168,7 +195,7 @@ function Availability({ row }: { row: BoardRow }) {
       </ul>
 
       {row.unansweredLabels.length > 0 && (
-        <p className="mt-1 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-2 text-[16px] text-muted">
           Still unanswered: {row.unansweredLabels.join(", ").toLowerCase()}
         </p>
       )}
@@ -177,15 +204,15 @@ function Availability({ row }: { row: BoardRow }) {
           marked it, the row says so in words rather than in a timestamp a
           reader has to do arithmetic on. */}
       {row.stale && (
-        <p className="mt-2 rounded border border-[#d8dce1] px-2 py-1 text-[14px] dark:border-[#2b3236]">
+        <p className="mt-3 rounded border-l-4 border-rule-strong bg-sunk px-3 py-2 text-[16px]">
           This was true {answerAge(row)}. Openings and waitlists move — worth
           asking again.
         </p>
       )}
 
-      <p className="mt-2 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
-        Reported by the facility
-        {row.lastInboundAt ? `, ${fmtTime(row.lastInboundAt)}` : ""}
+      <p className="mt-2 text-[14px] text-muted">
+        <span className="font-medium">Reported by the facility</span>
+        {row.lastInboundAt ? ` · ${fmtTime(row.lastInboundAt)}` : ""}
         {row.rounds > 1 ? ` · after ${row.rounds} rounds` : ""}
         {lowConfidence(row.confidence) ? " · answer was vague" : ""}
       </p>
@@ -200,22 +227,18 @@ function Availability({ row }: { row: BoardRow }) {
  * back, decided the family was still owed something, and wrote again in the
  * same thread without anyone asking it to — which is the single most useful
  * thing this product does, so it says so rather than showing a number.
+ *
+ * The explanation is rendered rather than hung off a `title`, because a tooltip
+ * is invisible to a keyboard and to a phone, which is where this gets read.
  */
 function Rounds({ row }: { row: BoardRow }) {
   if (row.rounds < 2) return null;
   return (
-    <span
-      className="rounded border border-[#14171a] px-1.5 py-0.5 font-medium text-[#14171a] dark:border-[#e8ebee] dark:text-[#e8ebee]"
-      title={
-        row.followUpReason === "low_confidence"
-          ? "Their first reply was too vague to plan around, so we asked again for a figure."
-          : "They left one of the five questions unanswered, so we asked again in the same thread."
-      }
-    >
-      {row.rounds} rounds
+    <span className="rounded border border-rule-strong px-2 py-0.5 font-medium">
+      {row.rounds} rounds ·{" "}
       {row.followUpReason === "low_confidence"
-        ? " · asked for a figure"
-        : " · asked again"}
+        ? "we asked again for a figure"
+        : "we asked again for what they skipped"}
     </span>
   );
 }
@@ -223,52 +246,64 @@ function Rounds({ row }: { row: BoardRow }) {
 function Row({
   row,
   onOpenThread,
+  onOpenFacility,
 }: {
   row: BoardRow;
   onOpenThread: (id: Id<"inquiries">) => void;
+  onOpenFacility: (ccn: string) => void;
 }) {
   const jeopardy = row.immediateJeopardy > 0;
   return (
     <li
-      className={`rounded border ${
-        jeopardy
-          ? "border-[#b3241c] dark:border-[#7a1410]"
-          : "border-[#d8dce1] dark:border-[#2b3236]"
+      className={`overflow-hidden rounded border ${
+        jeopardy ? "border-harm-edge" : "border-rule"
       }`}
     >
-      <div className="grid gap-4 p-4 sm:grid-cols-2 sm:gap-8">
-        <Safety row={row} />
+      <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-10">
+        <Safety row={row} onOpenFacility={onOpenFacility} />
         <Availability row={row} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#d8dce1] px-4 py-2 text-[13px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
-        <Rounds row={row} />
-        {row.nudgeCount > 0 && (
-          <span title="One polite note after three days of silence. Never a second one.">
-            Nudged once
-          </span>
-        )}
-        {row.simulated && (
-          <span className="rounded border border-[#d8dce1] px-1.5 py-0.5 font-medium dark:border-[#2b3236]">
-            Simulated reply
-          </span>
-        )}
-        {row.simulated && row.intendedTo && (
+      {/* The provenance strip: who we wrote to, from where, and what became of
+          it. A facility with no published address has no thread to open and no
+          delivery status, so rather than leaving an empty bar the strip says
+          what actually happened — the record has a phone number and the open
+          web had nothing else. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-sunk px-5 py-3 text-[14px] text-muted">
+        {row.noEmailFound ? (
           <span>
-            we did not write to {row.intendedTo} — routed to an inbox we own
+            No address for this facility anywhere on the open web — the federal
+            record publishes a telephone number and nothing else. It keeps its
+            place here with its full inspection record.
           </span>
-        )}
-        {!row.simulated && !row.noEmailFound && row.toEmail && (
-          <span>Emailed {row.toEmail}</span>
-        )}
-        {row.deliveryStatus && <span>AgentMail: {row.deliveryStatus}</span>}
-        {!row.noEmailFound && (
-          <button
-            onClick={() => onOpenThread(row.inquiryId as Id<"inquiries">)}
-            className="ml-auto underline underline-offset-4"
-          >
-            Read the emails
-          </button>
+        ) : (
+          <>
+            <Rounds row={row} />
+            {row.nudgeCount > 0 && (
+              <span>Nudged once after three days of silence — never twice</span>
+            )}
+            {row.simulated && (
+              <span className="rounded border border-rule-strong px-2 py-0.5 font-medium">
+                Simulated reply
+              </span>
+            )}
+            {row.simulated && row.intendedTo && (
+              <span>
+                we did not write to {row.intendedTo} — routed to an inbox we own
+              </span>
+            )}
+            {!row.simulated && row.toEmail && (
+              <span className="break-all">Emailed {row.toEmail}</span>
+            )}
+            {row.deliveryStatus && <span>AgentMail: {row.deliveryStatus}</span>}
+            <button
+              onClick={() => onOpenThread(row.inquiryId as Id<"inquiries">)}
+              className="ml-auto font-medium text-ink underline underline-offset-4"
+            >
+              Read the emails
+              <span className="sr-only"> from {row.facilityName}</span>
+            </button>
+          </>
         )}
       </div>
     </li>
@@ -298,17 +333,17 @@ function Alerts({
   return (
     <section
       aria-label="New findings since you shortlisted"
-      className="mt-6 rounded border border-[#b3241c] p-4 dark:border-[#7a1410]"
+      className="mt-6 rounded border border-harm-edge bg-harm-soft p-5"
     >
-      <h3 className="text-[16px] font-semibold text-[#b3241c] dark:text-[#ff8a80]">
+      <h3 className="text-[18px] font-semibold text-harm">
         New in the federal record since you shortlisted
       </h3>
-      <ul className="mt-2 space-y-2 text-[15px]">
+      <ul className="mt-3 space-y-2 text-[16px]">
         {alerts.map((a) => (
           <li key={a.id}>
             <span className="font-medium">{a.facilityName}</span> was cited for{" "}
             {a.tagDescription.replace(/\.$/, "")}.{" "}
-            <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+            <span className="text-muted">
               {a.kind === "new_immediate_jeopardy"
                 ? "Immediate jeopardy to residents"
                 : "A resident was actually harmed"}
@@ -338,9 +373,9 @@ function Spend({ searchId }: { searchId: Id<"searches"> }) {
   const top = spend.byPurpose.slice(0, 3);
 
   return (
-    <p className="mt-8 border-t border-[#d8dce1] pt-4 text-[13px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+    <p className="mt-10 border-t border-rule pt-5 text-[14px] leading-relaxed text-muted">
       This search has cost{" "}
-      <span className="font-medium text-[#14171a] tabular-nums dark:text-[#e8ebee]">
+      <span className="font-medium tabular-nums text-ink">
         {spend.fullyPriced ? dollars : "an unpriced amount"}
       </span>{" "}
       in model calls — {spend.calls} call{spend.calls === 1 ? "" : "s"},{" "}
@@ -386,24 +421,30 @@ function humanPurpose(purpose: string): string {
 export function Board({
   searchId,
   onOpenThread,
+  onOpenFacility,
 }: {
   searchId: Id<"searches">;
   onOpenThread: (id: Id<"inquiries">) => void;
+  onOpenFacility: (ccn: string) => void;
 }) {
   const board = useQuery(api.searches.board, { searchId });
 
   if (board === undefined) {
     return (
-      <p className="mx-auto max-w-7xl px-6 py-10 text-[#5b6570] dark:text-[#9aa4ad]">
-        Loading the board…
-      </p>
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <Loading what="Loading the shortlist and their inspection records…" />
+      </div>
     );
   }
   if (board === null) {
     return (
-      <p className="mx-auto max-w-7xl px-6 py-10 text-[#5b6570] dark:text-[#9aa4ad]">
-        That search is not available.
-      </p>
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <Empty title="That search is not available.">
+          It may belong to a different session. Ombuds signs every visitor in
+          anonymously, so a search is only visible to the browser that started
+          it.
+        </Empty>
+      </div>
     );
   }
 
@@ -412,10 +453,10 @@ export function Board({
   return (
     <section className="mx-auto max-w-7xl px-6 py-8">
       <header>
-        <h2 className="text-[22px] font-semibold">
+        <h2 className="text-[24px] font-semibold sm:text-[26px]">
           {search.label} family · {search.careLevel} care near {search.zip}
         </h2>
-        <p className="mt-1 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-2 text-[16px] text-muted">
           {search.budgetMax
             ? `Up to ${fmtMoney(search.budgetMax)} a month`
             : "No budget set"}
@@ -425,11 +466,9 @@ export function Board({
         {/* Where the campaign is writing from, and whether anything real can
             leave the building. Both are facts a judge should be able to check
             on screen rather than take on trust. */}
-        <p className="mt-2 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-2 text-[16px] leading-relaxed text-muted">
           Writing from{" "}
-          <span className="font-medium text-[#14171a] dark:text-[#e8ebee]">
-            {search.inboxEmail}
-          </span>
+          <span className="font-medium text-ink">{search.inboxEmail}</span>
           {search.inboxMode === "shared"
             ? " (shared inbox — this AgentMail plan issues one)"
             : " (this search's own inbox)"}
@@ -439,33 +478,43 @@ export function Board({
       </header>
 
       {/* The live counter. Every number is a subscription. */}
-      <div className="mt-6 flex flex-wrap items-baseline gap-x-8 gap-y-2 border-y border-[#d8dce1] py-4 dark:border-[#2b3236]">
+      <div
+        aria-live="polite"
+        className="mt-6 flex flex-wrap items-baseline gap-x-8 gap-y-3 border-y border-rule py-4"
+      >
         <Counter value={counters.shortlisted} label="shortlisted" />
         <Counter value={counters.contacted} label="contacted" />
         <Counter value={counters.replied} label="replied" />
         <Counter value={counters.openings} label="have openings" />
         <Counter value={counters.clarifying} label="asked again" />
-        <Counter value={counters.flagged} label="flagged for harm" alarming />
+        <Counter value={counters.flagged} label="flagged for harm" harm />
       </div>
 
       <Alerts alerts={alerts} />
 
-      <div className="mt-4 hidden gap-8 px-4 text-[13px] font-medium uppercase tracking-wide text-[#5b6570] sm:grid sm:grid-cols-2 dark:text-[#9aa4ad]">
+      <div className="mt-6 hidden gap-10 px-5 text-[14px] font-medium uppercase tracking-wide text-muted sm:grid sm:grid-cols-2">
         <span>Safety · the federal inspection record</span>
         <span>Availability · what the facility told us</span>
       </div>
 
       {rows.length === 0 ? (
-        <p className="mt-4 rounded border border-[#d8dce1] p-6 text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
-          No facilities on this shortlist yet.
-        </p>
+        <div className="mt-3">
+          {/* Not an error. The shortlist is written a moment after the search
+              itself, so this is what the first second of a campaign looks
+              like — and it says so rather than showing a bare "none". */}
+          <Empty title="Building the shortlist…">
+            Twelve facilities near {search.zip} are being pulled from the
+            federal record. Their rows appear here as they land.
+          </Empty>
+        </div>
       ) : (
-        <ul className="mt-2 space-y-3">
+        <ul className="mt-3 space-y-4">
           {rows.map((row) => (
             <Row
               key={row.inquiryId}
               row={row as BoardRow}
               onOpenThread={onOpenThread}
+              onOpenFacility={onOpenFacility}
             />
           ))}
         </ul>

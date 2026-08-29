@@ -20,16 +20,16 @@ export const HARM_LABEL: Record<HarmLevel, string> = {
 /**
  * Only the two harm levels get colour. Everything below "actual harm" is
  * rendered in ordinary ink — a paperwork finding must not look like an injury.
+ *
+ * `surface-harm` on the jeopardy chip switches any focus ring inside it to
+ * white: the focus blue sits at 1.02:1 against that red and would vanish.
  */
 export const HARM_CHIP: Record<HarmLevel, string> = {
-  minimal:
-    "border-[#d8dce1] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]",
-  potential:
-    "border-[#d8dce1] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]",
-  actual_harm:
-    "border-[#b3241c] text-[#b3241c] bg-[#fdf0ef] dark:bg-[#2a1210] dark:text-[#ff8a80] dark:border-[#7a1410]",
+  minimal: "border-rule text-muted",
+  potential: "border-rule text-muted",
+  actual_harm: "border-harm-edge bg-harm-soft text-harm",
   immediate_jeopardy:
-    "border-[#7a1410] bg-[#b3241c] text-white dark:bg-[#7a1410] dark:text-white",
+    "surface-harm border-harm-edge bg-harm-solid text-on-harm",
 };
 
 export const SPREAD_LABEL: Record<string, string> = {
