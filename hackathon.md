@@ -8,11 +8,11 @@
 - **Frontend:** Convex static hosting
 - **Convex deployment:** not deployed
 - **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
-- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, realtime queries, paginated queries, components
+- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-28T18:21:12Z
+- **Last updated:** 2026-08-29T19:37:38Z
 
 ## Log
 
@@ -202,3 +202,62 @@ canonical text and leave the availability column empty. Both were verified by
 driving the parse chain directly with realistic parse results: the row settled
 to answered with cost, waitlist, and night ratio, and the dodged-price row went
 to clarifying and fired its follow-up.
+
+### 2026-08-29 - d9b5c6a
+Corrects the previous entry: the model-dependent steps are no longer blocked.
+Letters are drafted and replies are parsed for real, on a working key.
+
+A facility that answers four questions out of five now gets asked the fifth,
+by the agent, in the same email thread, on its own. Verified end to end against
+real CMS records and seeded AgentMail personas: a home that replied "it really
+depends on her care level" was written back to and answered $6,000-$7,200 a
+month plus a $3,000 move-in fee, and the rounds counter on its board row moved
+from 1 to 2 while the page was open.
+
+The loop runs inside Convex through `@convex-dev/agent`, which was registered
+since the first commit and is now actually used (`convex/agentLoop.ts`). One
+agent thread per conversation, so round two is reasoned about with round one in
+front of it, and five tools: `lookupFacility`, `parseReply`, `sendFollowUp`,
+`sendInquiry`, `rankResults`. The model decides whether to write back; it does
+not decide whether it is allowed to. The two-round cap, an idempotency check on
+"has a letter already gone out for this round", and the existing send guard all
+refuse the agent exactly as they refuse anything else. A reconciliation runs
+behind every turn and checks the outcome rather than the intention: if a reply
+went unread or a follow-up went unsent, it does the work itself. Convex
+features: internal actions, scheduled functions, agent component.
+
+Four crons, each tied to something that changes on a clock nobody is watching
+(`convex/crons.ts`). One polite nudge after 72 hours of silence and never a
+second one — the check and the increment are a single mutation, so two sweeps
+cannot both win; nudged-and-still-silent settles at `no_response`, which is an
+answer a family can act on. The monthly CMS re-ingest diffs the new record
+against the old one and raises an alert on every active search watching a
+facility that picked up a harm-level citation since it was shortlisted
+(`convex/cms.ts`). Answers older than thirty days are marked stale, because
+"one room open now" was true in March and is worth nothing in July.
+
+Every model call now lands in one ledger with its tokens priced, shown in a
+small footer under the board (`convex/usage.ts`, `convex/ai/provider.ts`). A
+model we have no published rate for records its tokens and no dollars rather
+than a confident wrong number. Ingest also picks up the CMS staffing, turnover,
+fines, and special-focus columns, so a facility's own claim about who is on the
+floor at 3am can sit beside the registered-nurse hours the federal record
+publishes for that building.
+
+Four bugs found by running it rather than by reading it. A tool declared with an
+empty parameter object is one this model will not call: it burned its steps and
+answered in prose, and a whole rehearsal ended with four replies received and
+none of them read — which is also why the reconciliation now covers an unread
+reply and not just an unsent follow-up. Tools that act on one conversation are
+built per turn with the ids closed over, after the model transposed a character
+in a Convex id and a follow-up silently never went out. A second round was
+overwriting the first round's answers in the unanswered list, so a facility that
+had answered everything appeared to have answered almost nothing. And a fallback
+letter written during a provider outage was being cached as if it were a result,
+which would have kept sending the unpersonalised letter long after the provider
+recovered.
+
+The dev API credential is on a free tier that caps the larger model at 20
+requests a minute, which a six-facility campaign exceeds, so both tiers point at
+the small model during rehearsal via the existing `GEMINI_MODEL_LARGE` override.
+The shipping target in `convex/ai/provider.ts` is unchanged.
