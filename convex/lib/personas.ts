@@ -243,9 +243,38 @@ export function personaFor(index: number): Persona {
 }
 
 /**
- * A randomised 20-90 second reply delay, so the board fills in the way a real
- * campaign does — unevenly, over a minute, rather than all at once.
+ * When a seeded persona answers, measured from the moment its letter goes out.
+ *
+ * This is the clock the cold open is built on, so it is deliberate rather than
+ * random. CLAUDE.md section 7.2 gives us sixty seconds from a judge's click to
+ * a board with live replies on it, and that budget has to cover the whole
+ * mechanism, including the follow-up round — the moment where a facility dodges
+ * the pricing question and the agent writes back in-thread on its own. A
+ * uniform 20-90 second draw put the first reply anywhere in a seventy-second
+ * window and could push the follow-up past two minutes, which loses the
+ * strongest thing we have on camera.
+ *
+ * So the delay is a function of the facility's position in the roster: an
+ * ascending ladder from about eight seconds, spread far enough apart that the
+ * board visibly fills in one row at a time rather than blinking on at once.
+ * Position 1 is `dodges_pricing`, which answers early precisely so its
+ * follow-up round has room to complete inside the minute.
+ *
+ * The jitter is a second either way — enough that the board does not tick like
+ * a metronome, small enough that the run is still rehearsable.
+ *
+ * This governs simulated facilities only. A real facility answers when it
+ * answers, and nothing here touches that path.
  */
-export function replyDelayMs(): number {
-  return 20_000 + Math.floor(Math.random() * 70_000);
+const REPLY_BASE_MS = 8_000;
+const REPLY_STEP_MS = 4_500;
+const REPLY_JITTER_MS = 1_000;
+
+export function replyDelayMs(rosterIndex = 0): number {
+  const override = Number(process.env.OMBUDS_REPLY_DELAY_MS);
+  if (Number.isFinite(override) && override >= 0) return override;
+
+  const ladder = REPLY_BASE_MS + rosterIndex * REPLY_STEP_MS;
+  const jitter = Math.floor((Math.random() * 2 - 1) * REPLY_JITTER_MS);
+  return Math.max(2_000, ladder + jitter);
 }

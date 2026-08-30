@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { Provenance } from "./FacilityDetail";
+
 import { fmtDate } from "./severity";
+import { ErrorState, Loading, Provenance } from "./ui";
 
 /**
  * A live crawl of a state assisted-living licensing portal.
@@ -35,10 +36,10 @@ function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={total}
       aria-label="Pages crawled"
-      className="mt-3 h-2 w-full overflow-hidden rounded bg-[#f4f5f7] dark:bg-[#1b1f22]"
+      className="mt-3 h-2 w-full overflow-hidden rounded bg-sunk"
     >
       <div
-        className="h-full bg-[#14171a] transition-[width] duration-500 dark:bg-[#e8ebee]"
+        className="h-full bg-ink transition-[width] duration-500"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -54,7 +55,11 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
   );
 
   if (progress === undefined) {
-    return <p className="mt-3 text-[#5b6570] dark:text-[#9aa4ad]">Starting…</p>;
+    return (
+      <div className="mt-3">
+        <Loading what="Starting the crawl…" />
+      </div>
+    );
   }
   if (progress === null) return null;
 
@@ -62,9 +67,9 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
 
   return (
     <div className="mt-4">
-      <p className="text-[15px]">
+      <p className="text-[16px]">
         <span className="font-medium">{progress.portalName}</span>{" "}
-        <span className="text-[#5b6570] dark:text-[#9aa4ad]">
+        <span className="text-muted">
           · {progress.status}
           {running ? " — reading pages now" : ""}
         </span>
@@ -77,7 +82,7 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
 
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             Pages read
           </dt>
           <dd className="text-[17px] font-medium tabular-nums">
@@ -86,7 +91,7 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
           </dd>
         </div>
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             Stored in Convex
           </dt>
           <dd className="text-[17px] font-medium tabular-nums">
@@ -94,7 +99,7 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
           </dd>
         </div>
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             Facilities found
           </dt>
           <dd className="text-[17px] font-medium tabular-nums">
@@ -102,7 +107,7 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
           </dd>
         </div>
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             Firecrawl credits
           </dt>
           <dd className="text-[17px] font-medium tabular-nums">
@@ -112,19 +117,21 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
       </dl>
 
       {progress.error && (
-        <p className="mt-3 max-w-3xl text-[15px]">{progress.error}</p>
+        <div className="mt-3 max-w-3xl">
+          <ErrorState title="The crawl stopped early." detail={progress.error} />
+        </div>
       )}
 
       {pages.length > 0 && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-[14px] text-[#5b6570] underline underline-offset-2 dark:text-[#9aa4ad]">
+          <summary className="cursor-pointer text-[16px] text-muted underline underline-offset-2">
             Pages this crawl has read
           </summary>
           <ul className="mt-2 space-y-1">
             {pages.map((page) => (
               <li
                 key={page._id}
-                className="break-all text-[13px] text-[#5b6570] dark:text-[#9aa4ad]"
+                className="break-all text-[14px] text-muted"
               >
                 {page.url}
               </li>
@@ -176,7 +183,7 @@ export function LicensingCrawl() {
   }
 
   return (
-    <section className="mx-auto max-w-4xl px-6 py-10">
+    <section className="mx-auto max-w-7xl px-6 py-10">
       <h2 className="text-2xl font-semibold">
         What the federal record does not cover
       </h2>
@@ -203,12 +210,20 @@ export function LicensingCrawl() {
       <button
         onClick={() => void run()}
         disabled={starting}
-        className="mt-4 rounded border border-[#d8dce1] px-4 py-2 text-[15px] font-medium underline underline-offset-4 disabled:opacity-50 dark:border-[#2b3236]"
+        className="mt-4 rounded border border-rule-strong px-4 py-2 text-[16px] font-medium disabled:opacity-50"
       >
         {starting ? "Starting the crawl…" : "Crawl the state register now"}
       </button>
 
-      {error && <p className="mt-3 max-w-3xl text-[15px]">{error}</p>}
+      {error && (
+        <div className="mt-3 max-w-3xl">
+          <ErrorState
+            title="We could not start the crawl."
+            detail={error}
+            onRetry={() => void run()}
+          />
+        </div>
+      )}
 
       {activeCrawlId && <CrawlMonitor crawlId={activeCrawlId} />}
 
@@ -221,10 +236,10 @@ export function LicensingCrawl() {
             {coverage.sample.map((facility) => (
               <li
                 key={`${facility.name}-${facility.zip}`}
-                className="border-t border-[#d8dce1] py-3 dark:border-[#2b3236]"
+                className="border-t border-rule py-3"
               >
                 <p className="text-[16px] font-medium">{facility.name}</p>
-                <p className="text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+                <p className="text-[16px] text-muted">
                   {facility.address}, {facility.city} {facility.zip} ·{" "}
                   {facility.phone} · {facility.careTypes.join(", ")}
                 </p>

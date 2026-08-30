@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtTime } from "./board";
+import { Empty, Loading } from "./ui";
 
 /**
  * The actual conversation, reactive.
@@ -33,19 +34,19 @@ function Message({
     <li
       className={`rounded border p-4 ${
         outbound
-          ? "border-[#d8dce1] dark:border-[#2b3236]"
-          : "border-[#d8dce1] bg-[#f4f5f7] dark:border-[#2b3236] dark:bg-[#171b1e]"
+          ? "border-rule"
+          : "border-rule bg-sunk  "
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-[14px] font-semibold">
+        <span className="text-[15px] font-semibold">
           {outbound ? "The family" : message.fromAddress || "The facility"}
         </span>
-        <span className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <span className="text-[14px] text-muted">
           {fmtTime(message.createdAt)} · round {message.round}
         </span>
         {message.simulated && (
-          <span className="rounded border border-[#d8dce1] px-1.5 py-0.5 text-[12px] font-medium text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+          <span className="rounded border border-rule px-1.5 py-0.5 text-[14px] font-medium text-muted">
             Simulated
             {message.persona ? ` · ${message.persona.replace(/_/g, " ")}` : ""}
           </span>
@@ -53,23 +54,23 @@ function Message({
       </div>
 
       {outbound && (
-        <p className="mt-1 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-1 text-[14px] text-muted">
           {message.subject}
         </p>
       )}
 
-      <pre className="mt-3 whitespace-pre-wrap font-sans text-[15px] leading-relaxed">
+      <pre className="mt-3 whitespace-pre-wrap font-sans text-[16px] leading-relaxed">
         {message.body}
       </pre>
 
       {outbound && message.model === "no-model-nudge" && (
-        <p className="mt-3 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-3 text-[14px] text-muted">
           A nudge says the same thing to everyone, so no model wrote this one.
         </p>
       )}
 
       {outbound && message.model && message.model !== "no-model-nudge" && (
-        <p className="mt-3 text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-3 text-[14px] text-muted">
           Drafted by {message.model} in the family's words, from what they told
           us they needed.
         </p>
@@ -89,9 +90,9 @@ export function ThreadView({
 
   if (thread === undefined) {
     return (
-      <p className="mx-auto max-w-3xl px-6 py-10 text-[#5b6570] dark:text-[#9aa4ad]">
-        Loading the conversation…
-      </p>
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <Loading what="Loading this conversation…" />
+      </div>
     );
   }
   if (thread === null) {
@@ -100,27 +101,31 @@ export function ThreadView({
         <button onClick={onBack} className="underline underline-offset-4">
           Back to the board
         </button>
-        <p className="mt-4 text-[#5b6570] dark:text-[#9aa4ad]">
-          That conversation is not available.
-        </p>
+        <div className="mt-4">
+          <Empty title="That conversation is not available.">
+            It may belong to a different session. Ombuds signs every visitor in
+            anonymously, so a search and its threads are only visible to the
+            browser that started them.
+          </Empty>
+        </div>
       </div>
     );
   }
 
   return (
     <section className="mx-auto max-w-3xl px-6 py-8">
-      <button onClick={onBack} className="text-[15px] underline underline-offset-4">
+      <button onClick={onBack} className="text-[16px] underline underline-offset-4">
         Back to the board
       </button>
 
       <h2 className="mt-4 text-[22px] font-semibold">{thread.facilityName}</h2>
-      <p className="mt-1 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-1 text-[16px] text-muted">
         {thread.inboxEmail} → {thread.toEmail}
         {thread.deliveryStatus && ` · AgentMail: ${thread.deliveryStatus}`}
       </p>
 
       {thread.simulated && (
-        <p className="mt-3 rounded border border-[#d8dce1] p-3 text-[14px] text-[#5b6570] dark:border-[#2b3236] dark:text-[#9aa4ad]">
+        <p className="mt-3 rounded border border-rule p-3 text-[14px] text-muted">
           This conversation is simulated. We do not send hackathon traffic to
           real, understaffed nursing homes, so the inquiry was routed to an
           inbox we control and answered by a seeded persona
@@ -136,7 +141,7 @@ export function ThreadView({
           for: the reply that dodged a question, and then the message the agent
           wrote back on its own. */}
       {thread.rounds > 1 && (
-        <p className="mt-3 rounded border border-[#14171a] p-3 text-[15px] dark:border-[#e8ebee]">
+        <p className="mt-3 rounded border border-ink p-3 text-[16px]">
           <span className="font-medium">
             Round {thread.rounds} of {thread.maxRounds}.
           </span>{" "}
@@ -148,20 +153,20 @@ export function ThreadView({
       )}
 
       {thread.nudgeCount > 0 && (
-        <p className="mt-3 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-3 text-[16px] text-muted">
           They went quiet, so we sent one short note. Only ever one.
         </p>
       )}
 
       {thread.staleAt !== null && (
-        <p className="mt-3 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-3 text-[16px] text-muted">
           What they told us here is more than thirty days old. Openings and
           waitlists move.
         </p>
       )}
 
       {thread.unansweredLabels.length > 0 && (
-        <p className="mt-3 text-[15px]">
+        <p className="mt-3 text-[16px]">
           Still unanswered:{" "}
           <span className="font-medium">
             {thread.unansweredLabels.join(", ")}
@@ -170,9 +175,12 @@ export function ThreadView({
       )}
 
       {thread.messages.length === 0 ? (
-        <p className="mt-6 text-[#5b6570] dark:text-[#9aa4ad]">
-          Nothing has been sent yet.
-        </p>
+        <div className="mt-6">
+          <Empty title="Nothing has been sent yet.">
+            The letter is being drafted for this family and this facility. It
+            appears here the moment it goes out.
+          </Empty>
+        </div>
       ) : (
         <ul className="mt-6 space-y-3">
           {thread.messages.map((m) => (

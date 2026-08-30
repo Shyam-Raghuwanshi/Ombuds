@@ -1,7 +1,8 @@
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { Provenance } from "./FacilityDetail";
+
 import { fmtDate } from "./severity";
+import { ErrorState, Loading, Provenance } from "./ui";
 
 /**
  * How to reach this facility — the half of the record the federal government
@@ -31,12 +32,12 @@ function Chips({ label, values }: { label: string; values: string[] }) {
   if (values.length === 0) return null;
   return (
     <div className="mt-3">
-      <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">{label}</dt>
+      <dt className="text-[14px] text-muted">{label}</dt>
       <dd className="mt-1 flex flex-wrap gap-1.5">
         {values.map((value) => (
           <span
             key={value}
-            className="rounded border border-[#d8dce1] px-2 py-0.5 text-[14px] dark:border-[#2b3236]"
+            className="rounded border border-rule px-2 py-0.5 text-[14px]"
           >
             {value}
           </span>
@@ -85,20 +86,20 @@ function DiscoveryTrail({
   ];
 
   return (
-    <ol className="mt-4 space-y-1.5 border-l border-[#d8dce1] pl-4 dark:border-[#2b3236]">
+    <ol className="mt-4 space-y-1.5 border-l border-rule pl-4">
       {steps.map((step) => (
         <li key={step.label} className="text-[14px]">
           <span
             aria-hidden
-            className="mr-2 text-[#5b6570] dark:text-[#9aa4ad]"
+            className="mr-2 text-muted"
           >
             {step.done ? "✓" : step.failed ? "—" : "·"}
           </span>
-          <span className={step.done ? "" : "text-[#5b6570] dark:text-[#9aa4ad]"}>
+          <span className={step.done ? "" : "text-muted"}>
             {step.label}
           </span>
           {step.detail && (
-            <span className="ml-1 break-all text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+            <span className="ml-1 break-all text-[14px] text-muted">
               {step.detail}
             </span>
           )}
@@ -115,7 +116,9 @@ export function ContactPanel({ ccn }: { ccn: string }) {
     return (
       <section className="mt-8">
         <h2 className="text-xl font-semibold">How to reach them</h2>
-        <p className="mt-2 text-[#5b6570] dark:text-[#9aa4ad]">Loading…</p>
+        <div className="mt-2">
+          <Loading what="Looking for a way to contact them…" />
+        </div>
       </section>
     );
   }
@@ -124,9 +127,9 @@ export function ContactPanel({ ccn }: { ccn: string }) {
   const phone = formatPhone(card.phone);
 
   return (
-    <section className="mt-8 rounded border border-[#d8dce1] p-5 dark:border-[#2b3236]">
+    <section className="mt-8 rounded border border-rule p-5">
       <h2 className="text-xl font-semibold">How to reach them</h2>
-      <p className="mt-1 max-w-3xl text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-1 max-w-3xl text-[16px] text-muted">
         The federal record publishes a phone number for this facility and
         nothing else — no website, no email address. Everything below was found
         on the open web.
@@ -134,7 +137,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
 
       <dl className="mt-4">
         <div>
-          <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             Telephone
           </dt>
           <dd className="text-[17px] font-medium">
@@ -147,7 +150,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
 
         {card.contactStatus === "discovered" && card.contactEmail && (
           <div className="mt-4">
-            <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+            <dt className="text-[14px] text-muted">
               Email
             </dt>
             <dd className="text-[17px] font-medium break-all">
@@ -179,7 +182,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
           facility, and none of them are shown as if they were an error in the
           inspection record. */}
       {card.contactStatus === "no_website_found" && (
-        <p className="mt-4 max-w-3xl text-[15px]">
+        <p className="mt-4 max-w-3xl text-[16px]">
           We could not find a website for this facility. Many smaller homes do
           not have one. Their phone number above is from the federal record, and
           their full inspection history is below.
@@ -187,7 +190,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
       )}
 
       {card.contactStatus === "no_email_found" && (
-        <p className="mt-4 max-w-3xl text-[15px]">
+        <p className="mt-4 max-w-3xl text-[16px]">
           We found their website but no email address published on it, so there
           is no address to write to. Their phone number above is from the
           federal record.
@@ -195,15 +198,20 @@ export function ContactPanel({ ccn }: { ccn: string }) {
       )}
 
       {card.contactStatus === "failed" && card.enrichmentError && (
-        <p className="mt-4 max-w-3xl text-[15px]">{card.enrichmentError}</p>
+        <div className="mt-4 max-w-3xl">
+          <ErrorState
+            title="We could not finish looking for their contact details."
+            detail={`${card.enrichmentError} Their phone number above comes from the federal record and is unaffected, as is the whole inspection history below.`}
+          />
+        </div>
       )}
 
       {(card.contactStatus === "pending" ||
         card.contactStatus === "unstarted") && (
-        <p className="mt-4 flex items-center gap-2 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-4 flex items-center gap-2 text-[16px] text-muted">
           <span
             aria-hidden
-            className="inline-block h-3 w-3 animate-pulse rounded-full bg-[#d8dce1] dark:bg-[#2b3236]"
+            className="inline-block h-3 w-3 animate-pulse rounded-full bg-rule-strong"
           />
           Looking for a way to contact them…
         </p>
@@ -218,7 +226,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
       )}
 
       {card.website && (
-        <p className="mt-4 text-[15px]">
+        <p className="mt-4 text-[16px]">
           <a
             href={card.website}
             target="_blank"
@@ -231,7 +239,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
       )}
 
       {card.enrichment && (
-        <div className="mt-5 border-t border-[#d8dce1] pt-4 dark:border-[#2b3236]">
+        <div className="mt-5 border-t border-rule pt-4">
           <h3 className="text-[15px] font-medium">
             What the facility says about itself
           </h3>
@@ -241,10 +249,10 @@ export function ContactPanel({ ccn }: { ccn: string }) {
             <Chips label="Amenities" values={card.enrichment.amenities} />
             {card.enrichment.publishedPricing && (
               <div className="mt-3">
-                <dt className="text-[13px] text-[#5b6570] dark:text-[#9aa4ad]">
+                <dt className="text-[14px] text-muted">
                   Published pricing
                 </dt>
-                <dd className="text-[15px]">
+                <dd className="text-[16px]">
                   {card.enrichment.publishedPricing}
                 </dd>
               </div>

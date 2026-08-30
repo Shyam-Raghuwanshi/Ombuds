@@ -257,6 +257,16 @@ export async function generateStructured<T>(args: {
     searchId?: Id<"searches">;
     inquiryId?: Id<"inquiries">;
   };
+  /**
+   * Give up after this long and throw, so the caller can fall back.
+   *
+   * The SDK's own retry is a count, not a clock: three attempts against a
+   * provider that is rate-limiting us and asking for a forty-second wait is
+   * north of a minute with nothing to show for it. Any call that a person is
+   * sitting in front of needs a bound in seconds rather than in attempts.
+   * Callers with a canonical fallback should set this; batch work should not.
+   */
+  deadlineMs?: number;
 }): Promise<{ object: T; model: string }> {
   const provider = activeProvider();
   const id = modelId(provider, TIER[args.task]);
@@ -271,6 +281,9 @@ export async function generateStructured<T>(args: {
     prompt: args.prompt,
     temperature: 0.2,
     maxRetries: 2,
+    ...(args.deadlineMs
+      ? { abortSignal: AbortSignal.timeout(args.deadlineMs) }
+      : {}),
   });
 
   if (args.ctx) {

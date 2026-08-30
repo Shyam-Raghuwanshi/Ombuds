@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useLazyTranslate } from "./useLazyTranslate";
+import { Loading } from "./ui";
 import { HARM_CHIP, HARM_LABEL, PATTERN_LABEL, fmtDate, type HarmLevel } from "./severity";
 
 /**
@@ -17,8 +18,8 @@ function Column({ ccn }: { ccn: string }) {
 
   if (!detail) {
     return (
-      <div className="rounded border border-[#d8dce1] p-5 dark:border-[#2b3236]">
-        <p className="text-[#5b6570]">Loading…</p>
+      <div className="rounded border border-rule p-5">
+        <Loading what="Loading this facility's record…" />
       </div>
     );
   }
@@ -31,104 +32,104 @@ function Column({ ccn }: { ccn: string }) {
     <div
       className={`flex flex-col rounded border p-5 ${
         hasJeopardy
-          ? "border-[#b3241c] dark:border-[#7a1410]"
-          : "border-[#d8dce1] dark:border-[#2b3236]"
+          ? "border-harm-edge"
+          : "border-rule"
       }`}
     >
       {hasJeopardy && (
         <p
           role="alert"
-          className="-mx-5 -mt-5 mb-4 rounded-t bg-[#b3241c] px-5 py-2 text-[14px] font-semibold text-white"
+          className="-mx-5 -mt-5 mb-4 rounded-t bg-harm-solid px-5 py-2 text-[14px] font-semibold text-white"
         >
           Immediate jeopardy on record ({counts.immediateJeopardy})
         </p>
       )}
 
       <h3 className="text-[17px] font-semibold leading-snug">{facility.name}</h3>
-      <p className="mt-1 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-2 text-[14px] text-muted">
         {facility.city}, {facility.state} · {facility.certifiedBeds} beds ·{" "}
         {facility.overallRating > 0
           ? `${facility.overallRating}★ CMS overall`
           : "no CMS rating published"}
       </p>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2 border-y border-[#d8dce1] py-3 text-center dark:border-[#2b3236]">
+      <dl className="mt-4 grid grid-cols-3 gap-2 border-y border-rule py-3 text-center">
         <div>
           <dd className="text-[20px] font-semibold">{counts.total}</dd>
-          <dt className="text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             findings
           </dt>
         </div>
         <div>
           <dd
             className={`text-[20px] font-semibold ${
-              counts.actualHarm ? "text-[#b3241c] dark:text-[#ff8a80]" : ""
+              counts.actualHarm ? "text-harm" : ""
             }`}
           >
             {counts.actualHarm}
           </dd>
-          <dt className="text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             actual harm
           </dt>
         </div>
         <div>
           <dd
             className={`text-[20px] font-semibold ${
-              counts.immediateJeopardy ? "text-[#b3241c] dark:text-[#ff8a80]" : ""
+              counts.immediateJeopardy ? "text-harm" : ""
             }`}
           >
             {counts.immediateJeopardy}
           </dd>
-          <dt className="text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <dt className="text-[14px] text-muted">
             jeopardy
           </dt>
         </div>
       </dl>
 
-      <h4 className="mt-4 text-[13px] font-medium uppercase tracking-wide text-[#5b6570] dark:text-[#9aa4ad]">
+      <h4 className="mt-4 text-[14px] font-medium uppercase tracking-wide text-muted">
         The pattern over time
       </h4>
       {riskSummary ? (
         <>
-          <p className="mt-1 text-[15px] leading-relaxed">{riskSummary.summary}</p>
-          <p className="mt-1 text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <p className="mt-2 text-[16px] leading-relaxed">{riskSummary.summary}</p>
+          <p className="mt-2 text-[14px] text-muted">
             {PATTERN_LABEL[riskSummary.pattern] ?? riskSummary.pattern} · written
             by {riskSummary.model}
           </p>
         </>
       ) : (
-        <p className="mt-1 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-2 text-[16px] text-muted">
           Reading {counts.total} findings…
         </p>
       )}
 
-      <h4 className="mt-4 text-[13px] font-medium uppercase tracking-wide text-[#5b6570] dark:text-[#9aa4ad]">
+      <h4 className="mt-4 text-[14px] font-medium uppercase tracking-wide text-muted">
         Most serious finding
       </h4>
       {worst ? (
         <>
           <span
-            className={`mt-1 inline-block self-start rounded border px-2 py-0.5 text-[13px] font-medium ${
+            className={`mt-1 inline-block self-start rounded border px-2 py-0.5 text-[14px] font-medium ${
               HARM_CHIP[worst.harmLevel as HarmLevel]
             }`}
           >
             {HARM_LABEL[worst.harmLevel as HarmLevel]}
           </span>
-          <p className="mt-2 text-[15px] leading-relaxed">
+          <p className="mt-2 text-[16px] leading-relaxed">
             {worst.full ?? "Translating…"}
           </p>
-          <p className="mt-1 text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+          <p className="mt-2 text-[14px] text-muted">
             {worst.tag} · scope/severity {worst.scopeSeverity} · inspected{" "}
             {fmtDate(worst.surveyDate)}
           </p>
         </>
       ) : (
-        <p className="mt-1 text-[15px] text-[#5b6570] dark:text-[#9aa4ad]">
+        <p className="mt-2 text-[16px] text-muted">
           No findings on record.
         </p>
       )}
 
-      <p className="mt-auto pt-4 text-[12px] text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-auto pt-4 text-[14px] text-muted">
         {immediateJeopardy.length > 0
           ? `Jeopardy findings: ${immediateJeopardy
               .map((c) => fmtDate(c.surveyDate))
@@ -144,7 +145,7 @@ function CacheLine() {
   const stats = useQuery(api.deficiencies.cacheStats, {});
   if (!stats) return null;
   return (
-    <p className="mt-2 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+    <p className="mt-2 text-[14px] text-muted">
       {stats.cachedMeanings} distinct meanings translated so far, covering{" "}
       {stats.citationsCovered} citations on file. A meaning is cached by tag and
       severity, so it is written once and reused by every facility in the
@@ -182,7 +183,7 @@ function ReachLine({ ccns }: { ccns: string[] }) {
   const settled = status.total - status.unstarted - status.pending;
 
   return (
-    <p className="mt-2 text-[14px] text-[#5b6570] dark:text-[#9aa4ad]">
+    <p className="mt-2 text-[14px] text-muted">
       {settled < status.total ? (
         <>Looking for a way to contact {status.total} facilities… </>
       ) : (
@@ -209,7 +210,7 @@ export function Compare({ ccns }: { ccns: string[] }) {
       <h1 className="text-3xl font-semibold leading-tight">
         Three facilities, three very different records
       </h1>
-      <p className="mt-3 max-w-3xl text-[17px] leading-relaxed text-[#5b6570] dark:text-[#9aa4ad]">
+      <p className="mt-3 max-w-3xl text-[18px] leading-relaxed text-muted">
         All three are real, Medicare-certified nursing homes in California. All
         the data below comes from the same federal inspection programme. The
         raw record is published as tag codes and severity letters; this is the
