@@ -170,36 +170,38 @@ export const upsertTagCatalog = internalMutation({
 // Facilities
 // =============================================================================
 
+/** The CMS-owned half of a facility document. Firecrawl's fields are patched
+ * on separately and must never appear here — see `upsertFacility`. */
+const facilityDoc = v.object({
+  ccn: v.string(),
+  name: v.string(),
+  address: v.string(),
+  city: v.string(),
+  state: v.string(),
+  zip: v.string(),
+  county: v.string(),
+  phone: v.string(),
+  ownershipType: v.string(),
+  certifiedBeds: v.number(),
+  overallRating: v.number(),
+  healthInspectionRating: v.number(),
+  staffingRating: v.number(),
+  qmRating: v.number(),
+  abuseIcon: v.boolean(),
+  latitude: v.number(),
+  longitude: v.number(),
+  rnHoursWeekend: v.optional(v.number()),
+  totalNurseHours: v.optional(v.number()),
+  nurseTurnover: v.optional(v.number()),
+  specialFocusStatus: v.optional(v.string()),
+  numberOfFines: v.optional(v.number()),
+  totalFinesUsd: v.optional(v.number()),
+  changedOwnershipLast12Months: v.optional(v.boolean()),
+  lastCmsSync: v.number(),
+});
+
 export const upsertFacility = internalMutation({
-  args: {
-    facility: v.object({
-      ccn: v.string(),
-      name: v.string(),
-      address: v.string(),
-      city: v.string(),
-      state: v.string(),
-      zip: v.string(),
-      county: v.string(),
-      phone: v.string(),
-      ownershipType: v.string(),
-      certifiedBeds: v.number(),
-      overallRating: v.number(),
-      healthInspectionRating: v.number(),
-      staffingRating: v.number(),
-      qmRating: v.number(),
-      abuseIcon: v.boolean(),
-      latitude: v.number(),
-      longitude: v.number(),
-      rnHoursWeekend: v.optional(v.number()),
-      totalNurseHours: v.optional(v.number()),
-      nurseTurnover: v.optional(v.number()),
-      specialFocusStatus: v.optional(v.string()),
-      numberOfFines: v.optional(v.number()),
-      totalFinesUsd: v.optional(v.number()),
-      changedOwnershipLast12Months: v.optional(v.boolean()),
-      lastCmsSync: v.number(),
-    }),
-  },
+  args: { facility: facilityDoc },
   returns: v.id("facilities"),
   handler: async (ctx, { facility }) => {
     const existing = await ctx.db
@@ -229,6 +231,56 @@ export const ingestFacility = action({
   handler: async (ctx, { ccn }) => await pullFacility(ctx, ccn),
 });
 
+/**
+ * One CMS Provider Information row, coerced into a facility document.
+ *
+ * Shared by the single-facility pull and the full-catalog ingest so there is
+ * exactly one place where a CMS column name is spelled, and a rename in the
+ * federal schema cannot leave the two paths disagreeing about what a facility
+ * is. Every value arrives as a string and nulls arrive as "" (CLAUDE.md
+ * section 6, fact 1), so all coercion happens here and nowhere else.
+ */
+function facilityFromRow(r: CmsRow) {
+  return {
+      ccn: str(r, "cms_certification_number_ccn"),
+      name: str(r, "provider_name"),
+      address: str(r, "provider_address"),
+      city: str(r, "citytown"),
+      state: str(r, "state"),
+      zip: str(r, "zip_code"),
+      county: str(r, "countyparish"),
+      phone: str(r, "telephone_number"),
+      ownershipType: str(r, "ownership_type"),
+      certifiedBeds: num(r, "number_of_certified_beds"),
+      overallRating: num(r, "overall_rating"),
+      healthInspectionRating: num(r, "health_inspection_rating"),
+      staffingRating: num(r, "staffing_rating"),
+      qmRating: num(r, "qm_rating"),
+      abuseIcon: bool(r, "abuse_icon"),
+      latitude: num(r, "latitude"),
+      longitude: num(r, "longitude"),
+      // Already computed by CMS, so never recomputed from other tables
+      // (CLAUDE.md section 6, fact 6).
+      rnHoursWeekend: optNum(
+        r,
+        "registered_nurse_hours_per_resident_per_day_on_the_weekend",
+      ),
+      totalNurseHours: optNum(
+        r,
+        "reported_total_nurse_staffing_hours_per_resident_per_day",
+      ),
+      nurseTurnover: optNum(r, "total_nursing_staff_turnover"),
+      specialFocusStatus: optStr(r, "special_focus_status"),
+      numberOfFines: optNum(r, "number_of_fines"),
+      totalFinesUsd: optNum(r, "total_amount_of_fines_in_dollars"),
+      changedOwnershipLast12Months: optBool(
+        r,
+        "provider_changed_ownership_in_last_12_months",
+      ),
+      lastCmsSync: Date.now(),
+  };
+}
+
 async function pullFacility(
   ctx: ActionCtx,
   ccn: string,
@@ -244,44 +296,7 @@ async function pullFacility(
     const r = rows[0];
 
     await ctx.runMutation(internal.cms.upsertFacility, {
-      facility: {
-        ccn: str(r, "cms_certification_number_ccn"),
-        name: str(r, "provider_name"),
-        address: str(r, "provider_address"),
-        city: str(r, "citytown"),
-        state: str(r, "state"),
-        zip: str(r, "zip_code"),
-        county: str(r, "countyparish"),
-        phone: str(r, "telephone_number"),
-        ownershipType: str(r, "ownership_type"),
-        certifiedBeds: num(r, "number_of_certified_beds"),
-        overallRating: num(r, "overall_rating"),
-        healthInspectionRating: num(r, "health_inspection_rating"),
-        staffingRating: num(r, "staffing_rating"),
-        qmRating: num(r, "qm_rating"),
-        abuseIcon: bool(r, "abuse_icon"),
-        latitude: num(r, "latitude"),
-        longitude: num(r, "longitude"),
-        // Already computed by CMS, so never recomputed from other tables
-        // (CLAUDE.md section 6, fact 6).
-        rnHoursWeekend: optNum(
-          r,
-          "registered_nurse_hours_per_resident_per_day_on_the_weekend",
-        ),
-        totalNurseHours: optNum(
-          r,
-          "reported_total_nurse_staffing_hours_per_resident_per_day",
-        ),
-        nurseTurnover: optNum(r, "total_nursing_staff_turnover"),
-        specialFocusStatus: optStr(r, "special_focus_status"),
-        numberOfFines: optNum(r, "number_of_fines"),
-        totalFinesUsd: optNum(r, "total_amount_of_fines_in_dollars"),
-        changedOwnershipLast12Months: optBool(
-          r,
-          "provider_changed_ownership_in_last_12_months",
-        ),
-        lastCmsSync: Date.now(),
-      },
+      facility: facilityFromRow(r),
     });
     return { ccn, name: str(r, "provider_name"), found: true };
   }
@@ -524,6 +539,136 @@ export const ingestFacilityByCcn = action({
       deficiencies: defs.stored,
       newHarm: defs.newHarm,
     };
+  },
+});
+
+// =============================================================================
+// The full catalog — every certified facility in the country
+// =============================================================================
+
+/**
+ * Upsert a page of facilities in one transaction.
+ *
+ * Patches rather than replaces, for the same reason `upsertFacility` does: a
+ * re-run must not clobber the website, contact address, or enrichment that
+ * Firecrawl found. Those columns are not in `facilityDoc` and so cannot be
+ * written from here even by accident.
+ */
+export const upsertFacilityBatch = internalMutation({
+  args: { facilities: v.array(facilityDoc) },
+  returns: v.object({ inserted: v.number(), updated: v.number() }),
+  handler: async (ctx, { facilities }) => {
+    let inserted = 0;
+    let updated = 0;
+    for (const facility of facilities) {
+      const existing = await ctx.db
+        .query("facilities")
+        .withIndex("by_ccn", (q) => q.eq("ccn", facility.ccn))
+        .unique();
+      if (existing) {
+        await ctx.db.patch(existing._id, facility);
+        updated += 1;
+      } else {
+        await ctx.db.insert("facilities", facility);
+        inserted += 1;
+      }
+    }
+    return { inserted, updated };
+  },
+});
+
+/** CMS caps a page at 1000 rows; writes are chunked below that per transaction. */
+const INGEST_WRITE_CHUNK = 250;
+
+/**
+ * Ingest the whole Provider Information dataset — ~14,690 facilities.
+ *
+ * This is the one CMS table it is correct to pull in bulk. It is 14,690 rows,
+ * one per facility, and the product cannot answer "what is near this ZIP"
+ * without all of them. Health Deficiencies is the opposite case at 419,479
+ * rows, and stays lazy and per-facility (CLAUDE.md section 6) — nothing here
+ * touches it, and nothing here calls a model, so a full run costs zero dollars
+ * and only CMS's own rate limit.
+ *
+ * Paged through the scheduler rather than looped in one action: fifteen CMS
+ * round trips and ~15,000 writes do not belong in a single transaction or a
+ * single action timeout.
+ */
+export const ingestAllFacilities = internalAction({
+  args: {
+    offset: v.optional(v.number()),
+    inserted: v.optional(v.number()),
+    updated: v.optional(v.number()),
+  },
+  returns: v.object({
+    offset: v.number(),
+    inserted: v.number(),
+    updated: v.number(),
+    done: v.boolean(),
+  }),
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    offset: number;
+    inserted: number;
+    updated: number;
+    done: boolean;
+  }> => {
+    const offset = args.offset ?? 0;
+    let inserted = args.inserted ?? 0;
+    let updated = args.updated ?? 0;
+
+    const rows = await cmsQuery(PROVIDER_INFO, [], MAX_PAGE, offset);
+    const facilities = rows
+      .map(facilityFromRow)
+      // A row with no CCN is not addressable by anything else in the product.
+      .filter((f) => f.ccn !== "");
+
+    for (let i = 0; i < facilities.length; i += INGEST_WRITE_CHUNK) {
+      const result = await ctx.runMutation(internal.cms.upsertFacilityBatch, {
+        facilities: facilities.slice(i, i + INGEST_WRITE_CHUNK),
+      });
+      inserted += result.inserted;
+      updated += result.updated;
+    }
+
+    const done = rows.length < MAX_PAGE;
+    const nextOffset = offset + rows.length;
+
+    if (done) {
+      console.log(
+        `[cms] full facility ingest complete: ${inserted} inserted, ` +
+          `${updated} updated, ${inserted + updated} total`,
+      );
+    } else {
+      console.log(
+        `[cms] full facility ingest: ${inserted + updated} facilities through ` +
+          `offset ${nextOffset}`,
+      );
+      await ctx.scheduler.runAfter(0, internal.cms.ingestAllFacilities, {
+        offset: nextOffset,
+        inserted,
+        updated,
+      });
+    }
+
+    return { offset: nextOffset, inserted, updated, done };
+  },
+});
+
+/**
+ * Kick off the full ingest and return immediately.
+ *
+ * Deliberately not awaited to completion: fifteen chained pages take a few
+ * minutes, which is longer than any caller should hold a connection open for.
+ */
+export const startFullIngest = action({
+  args: {},
+  returns: v.object({ started: v.boolean() }),
+  handler: async (ctx): Promise<{ started: boolean }> => {
+    await ctx.scheduler.runAfter(0, internal.cms.ingestAllFacilities, {});
+    return { started: true };
   },
 });
 

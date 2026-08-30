@@ -3,16 +3,16 @@
 - **Project:** Ombuds
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Ranks nearby senior care facilities by their federal inspection record in plain English, then emails each shortlisted facility to ask what is never published — current openings, true monthly cost, waitlist, night staffing, and tour availability.
-- **Live app:** not deployed
+- **Live app:** https://flexible-reindeer-206.convex.site
 - **Repo:** https://github.com/Shyam-Raghuwanshi/Ombuds
 - **Frontend:** Convex static hosting
-- **Convex deployment:** not deployed
+- **Convex deployment:** https://flexible-reindeer-206.convex.cloud
 - **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
 - **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-29T19:37:38Z
+- **Last updated:** 2026-08-30T04:41:26Z
 
 ## Log
 
@@ -261,3 +261,49 @@ The dev API credential is on a free tier that caps the larger model at 20
 requests a minute, which a six-facility campaign exceeds, so both tiers point at
 the small model during rehearsal via the existing `GEMINI_MODEL_LARGE` override.
 The shipping target in `convex/ai/provider.ts` is unchanged.
+
+
+### 2026-08-30 - working tree
+Live at https://flexible-reindeer-206.convex.site. A judge opens the URL, is
+signed in anonymously without a form, and clicks one button; the board fills
+with twelve real Pomona-area facilities and their federal inspection records in
+about seven seconds, the first facility reply lands at thirteen, the agent sends
+its own in-thread clarifying follow-up by twenty-four, and the run settles at
+thirty-six seconds with four replies, two openings, and one bounce. Verified
+against production through the same actions the button calls, from a fresh
+anonymous session with no cookies.
+
+The whole federal catalog is now in production: 14,690 facilities, which is
+every Medicare-certified nursing home in the country, plus the 643-row citation
+look-up that supplies the untruncated tag text. Ingest is paged a thousand rows
+at a time and chained through the scheduler, and writes in chunks below the
+transaction limit, so fifteen CMS round trips and fifteen thousand upserts never
+sit in one action (`cms:ingestAllFacilities`, `cms:upsertFacilityBatch`). It
+touches no model and costs nothing. The single-facility pull and the full
+catalog now share one row-to-document mapper, so there is exactly one place a
+CMS column name is spelled. Health Deficiencies stays lazy and per-facility, as
+it has to at 419,479 rows — the twelve facilities on the sample board carry
+their real citation histories, from 14 for the five-star to 201 for the one-star.
+
+Both webhooks are registered and reachable. Firecrawl crawls pick webhook mode
+on their own wherever a signing secret is configured and fall back to polling
+where there is none, so a laptop and production differ by an environment
+variable rather than a code path (`convex/licensing.ts`).
+
+Firecrawl found a published contact address for five of the twelve shortlisted
+facilities. The other seven keep their place on the board with their inspection
+record and the CMS phone number, labelled as having no published address —
+hiding them would reproduce exactly the filtering this project exists to
+document. Three of the five discoveries needed a retry through a rate limit and
+got one.
+
+Two things are not right yet and are worth writing down. Dedicated per-search
+AgentMail inboxes are not being created — the call fails to resolve and every
+search falls back to the shared organisation inbox, correctly labelled in the UI
+but not the multi-inbox architecture intended. The dev deployment shows the same
+fallback on every past run, so this predates the deployment rather than being
+caused by it. Separately, production is still pointed at the build-time model
+provider, whose free tier caps at 500 requests a day; that cap was reached
+during the verification run and several reply parses failed against it. The
+shipping provider switch in `convex/ai/provider.ts` is a one-variable change and
+is the next thing to do.
