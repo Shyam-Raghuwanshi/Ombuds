@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-08-30T04:41:26Z
+- **Last updated:** 2026-09-05T20:14:58Z
 
 ## Log
 
@@ -263,7 +263,48 @@ the small model during rehearsal via the existing `GEMINI_MODEL_LARGE` override.
 The shipping target in `convex/ai/provider.ts` is unchanged.
 
 
-### 2026-08-30 - working tree
+### 2026-08-29 - 7792f41
+Design pass over the whole frontend. Every colour became a semantic token in one
+file, and dark mode a token swap through `@theme inline` rather than a `dark:`
+variant per element — the ~144 of those across `src/` fell to 2, so light and
+dark parity is structural instead of something to remember on one element out of
+two hundred (`src/index.css`). Red is four tokens named for harm and never for
+decoration; errors are deliberately not red, because an error is not a harm
+finding.
+
+Two measured WCAG failures fixed. Interactive control borders sat at 1.38:1
+where a UI component needs 3:1. The focus ring was `outline-current`, which
+computes to 1.02:1 against the immediate-jeopardy banner and simply disappears;
+it is now a 3px ring with a white override on filled harm surfaces. Also: mobile
+overflow from an unbreakable "$10,000-$15,000" and an offscreen skip link,
+per-row Safety and Availability headings for the phone layout where the columns
+stack, and an empty grey footer on rows with no discovered address that now says
+what actually happened.
+
+Empty, loading and error states are named components alongside the provenance
+labels and an error boundary, so having all three on a screen is checkable
+rather than a matter of memory (`src/ui.tsx`, wrapped per screen and at the root
+in `src/App.tsx`). The boundary was verified against a real render throw rather
+than assumed.
+
+The cold open used to await inbox provisioning, an LLM letter draft and the
+whole fan-out before returning anything, so a judge watched a disabled button
+through a model call. The rows are now written first with no model involved, and
+the letter is drafted while the family is already reading real inspection
+records (`convex/searches.ts`). Reply delays became a deterministic ladder from
+about eight seconds keyed to roster position, with the pricing-dodger early so
+its follow-up round finishes inside the budget (`convex/lib/personas.ts`) — this
+replaces the randomised 20-90 second delay the project brief describes, which
+cannot fit a 60 second budget that also has to show a second round. Measured
+with a stopwatch, twice: board 1.4s, twelve real facility rows 1.6s, first live
+reply 15.0s, multi-round follow-up 21.9s.
+
+The reordering introduced a failure mode where a draft error stranded all twelve
+rows at "Queued to send" with nothing to explain it, so the draft is bounded to
+12s against the existing canonical letter and dispatch no longer depends on the
+draft succeeding.
+
+### 2026-08-30 - e853342
 Live at https://flexible-reindeer-206.convex.site. A judge opens the URL, is
 signed in anonymously without a form, and clicks one button; the board fills
 with twelve real Pomona-area facilities and their federal inspection records in
@@ -307,3 +348,32 @@ provider, whose free tier caps at 500 requests a day; that cap was reached
 during the verification run and several reply parses failed against it. The
 shipping provider switch in `convex/ai/provider.ts` is a one-variable change and
 is the next thing to do.
+
+
+### 2026-09-05 - working tree
+Per-search AgentMail inboxes provision, which closes the first of the two gaps
+the last entry left open. There were two causes and both were real. The
+component ships its inbox and thread calls as `internalAction`, so a mounting
+app cannot reference them at all and the call never resolved;
+`patches/@agentmail+convex+0.1.0.patch` now exposes createInbox, listInboxes,
+getInboxRemote, deleteInbox, listThreads, getThread and getMessage as public
+actions, alongside the env declaration that patch already carried. Underneath
+that, AgentMail validates `client_id` against `/^[A-Za-z0-9._~-]+$/` and our
+purpose keys are colon-separated, so every create came back 400. The colons now
+collapse to hyphens through one stable mapping, which is the part that matters:
+`client_id` is an idempotency key, so the same purpose has to produce the same
+value or a retry would open a second inbox (`convex/email.ts`).
+
+Falling back to the shared inbox is no longer permanent. `provisionInbox`
+returned whatever row it found, so once a purpose had fallen back, fixing the
+underlying cause could not heal it and the only way out was deleting the row by
+hand. A dedicated row still short-circuits; a shared one is retried and upgraded
+in place the first time the retry succeeds.
+
+Tooling for the provider switch is in, but the switch has not happened.
+`deficiencies:resetTranslationCache` clears the translation cache in
+self-chaining batches of 200, optionally filtered by the `model` prefix that
+records who wrote each row, so a half-re-warmed cache can drop one provider's
+rows and keep the other's — two facilities described in two different registers
+is visible on camera (`convex/deficiencies.ts`). Production still runs the
+build-time provider; that remains the next thing to do.

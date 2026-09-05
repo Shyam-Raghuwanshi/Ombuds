@@ -226,6 +226,19 @@ export const rememberInbox = internalMutation({
   },
 });
 
+/**
+ * Our internal purpose key, rendered into something AgentMail will accept.
+ *
+ * They validate `client_id` against /^[A-Za-z0-9._~-]+$/ and reject anything
+ * else with a 400. Ours are colon-separated, so every character outside that
+ * set collapses to a hyphen. The mapping is stable, which is what matters:
+ * `client_id` is an idempotency key, so the same purpose must always produce
+ * the same value or a retry would create a second inbox.
+ */
+function agentMailClientId(purpose: string): string {
+  return purpose.replace(/[^A-Za-z0-9._~-]/g, "-");
+}
+
 export type ProvisionedInbox = {
   inboxId: string;
   email: string;
@@ -252,14 +265,28 @@ export async function provisionInbox(
   const existing = await ctx.runQuery(internal.email.getInboxByPurpose, {
     purpose: args.purpose,
   });
-  if (existing) return existing;
+  // A dedicated inbox is the end state — reuse it and stop.
+  //
+  // A shared one is not. It records that provisioning failed *at the time*,
+  // and the reasons it fails are all temporary: a quota that gets raised, an
+  // outage that ends, a credential that gets rescoped. Returning it
+  // unconditionally made the fallback permanent — once a purpose had fallen
+  // back, fixing the underlying cause could never heal it, and the only way
+  // out was deleting the row by hand. So a shared row is retried here, and
+  // upgraded in place the first time the retry succeeds.
+  if (existing?.mode === "dedicated") return existing;
 
   let provisioned: ProvisionedInbox;
   try {
     const inbox = await agentmail.createInbox(amCtx(ctx), {
       username: args.username,
       displayName: args.displayName,
-      clientId: args.purpose,
+      // AgentMail validates client_id against /^[A-Za-z0-9._~-]+$/, and our
+      // purpose keys are colon-separated (`search:<userId>:<slug>`), so the
+      // raw value is rejected with a 400. The colons are only a separator for
+      // us; AgentMail just needs a stable idempotency key, and substituting a
+      // hyphen keeps it both valid and one-to-one with the purpose.
+      clientId: agentMailClientId(args.purpose),
     });
     provisioned = {
       inboxId: inbox.inbox_id,

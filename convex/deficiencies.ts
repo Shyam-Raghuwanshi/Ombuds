@@ -812,3 +812,73 @@ export const cacheStats = query({
     };
   },
 });
+
+// =============================================================================
+// The provider switch
+// =============================================================================
+
+/**
+ * Delete cached translations, so a provider switch cannot leave mixed voices.
+ *
+ * CLAUDE.md section 11, rule 7: rows written by one provider sitting alongside
+ * rows written by another means two facilities get described in two different
+ * registers, which is visible on camera and reads as sloppiness rather than as
+ * a caching strategy. The `model` field records who wrote each row, so this can
+ * clear only the outgoing provider's rows and leave a partially re-warmed cache
+ * intact — pass `modelPrefix: "gemini"` to drop just those.
+ *
+ * Batched and self-chaining: the table is small (~1,500 rows at most) but a
+ * delete-everything loop is exactly the kind of thing that should not assume so.
+ */
+export const clearTagTranslations = internalMutation({
+  args: {
+    modelPrefix: v.optional(v.string()),
+    cursor: v.union(v.string(), v.null()),
+    deleted: v.optional(v.number()),
+  },
+  returns: v.object({ deleted: v.number(), done: v.boolean() }),
+  handler: async (ctx, { modelPrefix, cursor, deleted }) => {
+    const page = await ctx.db
+      .query("tagTranslations")
+      .paginate({ cursor, numItems: 200 });
+
+    let removed = deleted ?? 0;
+    for (const row of page.page) {
+      if (modelPrefix && !row.model.startsWith(modelPrefix)) continue;
+      await ctx.db.delete(row._id);
+      removed += 1;
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.deficiencies.clearTagTranslations, {
+        modelPrefix,
+        cursor: page.continueCursor,
+        deleted: removed,
+      });
+      return { deleted: removed, done: false };
+    }
+
+    console.log(
+      `[deficiencies] cleared ${removed} cached translations` +
+        (modelPrefix ? ` written by ${modelPrefix}*` : ""),
+    );
+    return { deleted: removed, done: true };
+  },
+});
+
+/**
+ * Entry point for the switch. Returns immediately; the sweep chains behind it.
+ *
+ *   npx convex run --prod deficiencies:resetTranslationCache '{"modelPrefix":"gemini"}'
+ */
+export const resetTranslationCache = action({
+  args: { modelPrefix: v.optional(v.string()) },
+  returns: v.object({ started: v.boolean() }),
+  handler: async (ctx, { modelPrefix }): Promise<{ started: boolean }> => {
+    await ctx.scheduler.runAfter(0, internal.deficiencies.clearTagTranslations, {
+      modelPrefix,
+      cursor: null,
+    });
+    return { started: true };
+  },
+});
