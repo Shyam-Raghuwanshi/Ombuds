@@ -153,7 +153,7 @@ const SEND_STAGGER_MS = 1_200;
  * letter asks the same five questions; it is simply not personalised, and the
  * thread view says so by naming `canonical-fallback` as its author.
  */
-const LETTER_DRAFT_DEADLINE_MS = 12_000;
+const LETTER_DRAFT_DEADLINE_MS = 22_000;
 
 /** How long we keep asking the component what happened to an outbound message. */
 const RECONCILE_DELAYS_MS = [2_000, 6_000, 15_000, 40_000];

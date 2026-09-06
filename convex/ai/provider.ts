@@ -1,5 +1,4 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import type { z } from "zod";
@@ -9,17 +8,16 @@ import type { Id } from "../_generated/dataModel";
 
 /**
  * The ONLY file in this codebase that names a model or imports a provider SDK.
- * See CLAUDE.md section 11. Nothing else may import `@ai-sdk/*`.
+ * Nothing else may import `@ai-sdk/*`.
  *
- * Provider is chosen by the LLM_PROVIDER env var, never by editing code:
- *   LLM_PROVIDER=google   during the build
- *   LLM_PROVIDER=openai   from Sep 15 onward — this is what ships
- *
- * Both providers answer the same zod schema per task, so a swap either matches
+ * Every task answers a zod schema, so a model or version change either matches
  * the schema or fails loudly. It can never silently change the data shape.
+ *
+ * Model ids are overridable by env (`OPENAI_MODEL_SMALL`, `OPENAI_MODEL_LARGE`)
+ * so a rename upstream is a configuration change rather than a deploy.
  */
 
-export type Provider = "openai" | "google";
+export type Provider = "openai";
 
 /**
  * Tasks, and the tier each one runs at. CLAUDE.md section 10:
@@ -52,19 +50,18 @@ const TIER: Record<Task, "small" | "large"> = {
 };
 
 /**
- * Model ids are overridable by env so the Sep 15 provider switch can never be
- * blocked by a renamed model. Defaults are the current small/large pair.
+ * Model ids are overridable by env so a rename upstream can never block a
+ * deploy. Defaults are the current small/large pair.
  */
 const DEFAULT_MODELS: Record<Provider, { small: string; large: string }> = {
   openai: { small: "gpt-5-mini", large: "gpt-5" },
-  google: { small: "gemini-3.5-flash-lite", large: "gemini-3.5-flash" },
 };
 
 function activeProvider(): Provider {
   const raw = (process.env.LLM_PROVIDER ?? "openai").toLowerCase();
-  if (raw !== "openai" && raw !== "google") {
+  if (raw !== "openai") {
     throw new Error(
-      `LLM_PROVIDER must be "openai" or "google", got "${raw}". ` +
+      `LLM_PROVIDER must be "openai", got "${raw}". ` +
         `Set it with: npx convex env set LLM_PROVIDER openai`,
     );
   }
@@ -74,38 +71,26 @@ function activeProvider(): Provider {
 function modelId(provider: Provider, tier: "small" | "large"): string {
   const override =
     tier === "small"
-      ? process.env[provider === "openai" ? "OPENAI_MODEL_SMALL" : "GEMINI_MODEL_SMALL"]
-      : process.env[provider === "openai" ? "OPENAI_MODEL_LARGE" : "GEMINI_MODEL_LARGE"];
+      ? process.env.OPENAI_MODEL_SMALL
+      : process.env.OPENAI_MODEL_LARGE;
   return override ?? DEFAULT_MODELS[provider][tier];
 }
 
 /**
- * Both adapters implement the v4 model spec, and that is deliberately the
- * declared type rather than the AI SDK's wider `LanguageModel` union: the
- * Convex Agent component only accepts a v4 model, and it should be this file
- * that fails to compile if a provider package is ever downgraded — not the
- * agent that silently loses its model.
+ * `LanguageModelV4` is deliberately the declared type rather than the AI SDK's
+ * wider `LanguageModel` union: the Convex Agent component only accepts a v4
+ * model, and it should be this file that fails to compile if the provider
+ * package is ever downgraded — not the agent that silently loses its model.
  */
-function languageModel(provider: Provider, id: string): LanguageModelV4 {
-  if (provider === "openai") {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        "OPENAI_API_KEY is not set on this deployment. " +
-          "Set it with: npx convex env set OPENAI_API_KEY sk-...",
-      );
-    }
-    return createOpenAI({ apiKey })(id);
-  }
-  // Dev-time provider only. Never reachable when LLM_PROVIDER=openai.
-  const apiKey = process.env.GEMINI_API_KEY;
+function languageModel(_provider: Provider, id: string): LanguageModelV4 {
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is not set on this deployment. " +
-        "Set it with: npx convex env set GEMINI_API_KEY ...",
+      "OPENAI_API_KEY is not set on this deployment. " +
+        "Set it with: npx convex env set OPENAI_API_KEY sk-...",
     );
   }
-  return createGoogleGenerativeAI({ apiKey })(id);
+  return createOpenAI({ apiKey })(id);
 }
 
 /**
@@ -165,8 +150,6 @@ const LIST_PRICES: Record<
 > = {
   "openai:gpt-5": { input: 1.25, cachedInput: 0.125, output: 10 },
   "openai:gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2 },
-  "google:gemini-3.5-flash": { input: 0.3, cachedInput: 0.075, output: 2.5 },
-  "google:gemini-3.5-flash-lite": { input: 0.1, cachedInput: 0.025, output: 0.4 },
 };
 
 function priceTable(): typeof LIST_PRICES {
@@ -181,18 +164,18 @@ function priceTable(): typeof LIST_PRICES {
 }
 
 /**
- * Map a provider id back onto the two names this file knows.
+ * Map a provider id back onto the name this file knows.
  *
- * The AI SDK reports the adapter's own id — `google.generative-ai`,
- * `openai.chat` — while our price table, our provenance strings, and the
- * `LLM_PROVIDER` env var all use the short name. Without this, calls made
- * through the Convex Agent component arrive under a name the price table has
- * never heard of and are silently recorded as unpriced: tokens counted,
- * dollars missing, and a cost figure on screen that is quietly too low.
+ * The AI SDK reports the adapter's own id — `openai.chat`, `openai.responses` —
+ * while our price table, our provenance strings, and the `LLM_PROVIDER` env var
+ * all use the short name. Without this, calls made through the Convex Agent
+ * component arrive under a name the price table has never heard of and are
+ * silently recorded as unpriced: tokens counted, dollars missing, and a cost
+ * figure on screen that is quietly too low.
  */
 export function normalizeProviderId(raw: string): string {
   const head = raw.toLowerCase().split(/[.\/]/)[0];
-  return head === "google" || head === "openai" ? head : raw;
+  return head === "openai" ? head : raw;
 }
 
 export type TokenCounts = {
@@ -279,7 +262,16 @@ export async function generateStructured<T>(args: {
     schemaDescription: args.schemaDescription,
     system: args.system,
     prompt: args.prompt,
-    temperature: 0.2,
+    // No temperature: the GPT-5 family are reasoning models that reject it and
+    // warn on every single call.
+    //
+    // Reasoning effort is the latency dial, and every task here is either
+    // extraction against a fixed schema or a short piece of prose — none of it
+    // needs a long private chain of thought. Left at the default, gpt-5 took
+    // longer than the letter deadline in convex/email.ts, so the family's
+    // letter fell back to the canonical one on every run, and the agent loop
+    // lost its round-2 tool call to the reconciliation sweep.
+    providerOptions: { openai: { reasoningEffort: "low" } },
     maxRetries: 2,
     ...(args.deadlineMs
       ? { abortSignal: AbortSignal.timeout(args.deadlineMs) }

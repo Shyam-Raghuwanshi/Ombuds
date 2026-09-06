@@ -80,9 +80,9 @@ export const recordForThread = internalMutation({
           .unique()
       : null;
 
-    // The component reports the adapter's id ("google.generative-ai"); the
-    // price table is keyed on the short name. Normalise before both, so the
-    // ledger reads consistently whichever path a call came in through.
+    // The component reports the adapter's id ("openai.responses"); the price
+    // table is keyed on the short name. Normalise before both, so the ledger
+    // reads consistently whichever path a call came in through.
     const provider = normalizeProviderId(args.provider);
     const { costUsd, priced } = priceUsd(`${provider}:${args.model}`, {
       inputTokens: args.inputTokens,

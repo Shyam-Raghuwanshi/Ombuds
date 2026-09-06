@@ -820,12 +820,12 @@ export const cacheStats = query({
 /**
  * Delete cached translations, so a provider switch cannot leave mixed voices.
  *
- * CLAUDE.md section 11, rule 7: rows written by one provider sitting alongside
- * rows written by another means two facilities get described in two different
- * registers, which is visible on camera and reads as sloppiness rather than as
- * a caching strategy. The `model` field records who wrote each row, so this can
- * clear only the outgoing provider's rows and leave a partially re-warmed cache
- * intact — pass `modelPrefix: "gemini"` to drop just those.
+ * Rows written by one model sitting alongside rows written by another means two
+ * facilities get described in two different registers, which is visible on
+ * camera and reads as sloppiness rather than as a caching strategy. The `model`
+ * field records which model wrote each row, so this can clear only the outgoing
+ * model's rows and leave the rest of a re-warmed cache intact — pass
+ * `modelPrefix: "openai:gpt-5-mini"` to drop just those.
  *
  * Batched and self-chaining: the table is small (~1,500 rows at most) but a
  * delete-everything loop is exactly the kind of thing that should not assume so.
@@ -869,7 +869,7 @@ export const clearTagTranslations = internalMutation({
 /**
  * Entry point for the switch. Returns immediately; the sweep chains behind it.
  *
- *   npx convex run --prod deficiencies:resetTranslationCache '{"modelPrefix":"gemini"}'
+ *   npx convex run --prod deficiencies:resetTranslationCache '{}'
  */
 export const resetTranslationCache = action({
   args: { modelPrefix: v.optional(v.string()) },
