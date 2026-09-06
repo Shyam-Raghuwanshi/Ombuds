@@ -2,6 +2,8 @@ import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtDate } from "./severity";
+import { facilityName } from "./facilityName";
+import { QUESTION_KEYS, QUESTION_LABEL } from "../convex/lib/questions";
 import { Empty, Loading } from "./ui";
 import {
   answerAge,
@@ -50,15 +52,94 @@ function Counter({
   harm?: boolean;
 }) {
   return (
-    <div className="flex items-baseline gap-2">
-      <span
-        className={`text-[24px] font-semibold tabular-nums ${
+    <div className="bg-paper px-4 py-3">
+      <div
+        className={`text-[30px] font-semibold leading-none tabular-nums ${
           harm && value > 0 ? "text-harm" : ""
         }`}
       >
         {value}
-      </span>
-      <span className="text-[15px] text-muted">{label}</span>
+      </div>
+      <div className="mt-1.5 text-[14px] leading-snug text-muted">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * How far through the campaign we are, as a bar.
+ *
+ * The counters above already carry these numbers, and a bar carries none that
+ * they do not. It is here because this is the one thing on the screen that
+ * moves on its own, and a number ticking from 6 to 7 is invisible at arm's
+ * length while a bar advancing is not. A family glancing at a phone, and a
+ * judge watching a recording, both read the bar before they read the digits.
+ */
+function CampaignProgress({
+  replied,
+  shortlisted,
+  unreachable,
+}: {
+  replied: number;
+  shortlisted: number;
+  /**
+   * Facilities that publish no email address anywhere. Counted from the rows
+   * themselves rather than inferred from how many have been contacted so far:
+   * for the first seconds of a campaign every row is still queued, and
+   * treating "not yet written to" as "impossible to write to" would open the
+   * demo by announcing that all twelve facilities are unreachable.
+   */
+  unreachable: number;
+}) {
+  if (shortlisted === 0) return null;
+
+  // Denominated on the facilities we can write to at all, which is a fixed
+  // number for the life of the campaign. A facility with no published address
+  // can never reply, so leaving it in the denominator would hold the bar
+  // permanently short of the end and report a finished campaign as an
+  // unfinished one. They are named underneath instead of being folded into a
+  // figure that makes the campaign look worse than it went.
+  const reachable = Math.max(0, shortlisted - unreachable);
+  const pct = reachable > 0 ? Math.min(100, (replied / reachable) * 100) : 0;
+  const outstanding = Math.max(0, reachable - replied);
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-[16px]">
+          <span className="font-semibold tabular-nums">{replied}</span> of the{" "}
+          <span className="tabular-nums">{reachable}</span> facilities we can
+          write to {replied === 1 ? "has" : "have"} answered
+        </p>
+        <p className="text-[14px] text-muted">
+          {outstanding > 0
+            ? `${outstanding} still to answer — replies land here as they arrive, nothing to refresh`
+            : reachable > 0
+              ? "Every facility we could reach has answered"
+              : "Letters are still going out"}
+        </p>
+      </div>
+      <div
+        role="progressbar"
+        aria-valuenow={replied}
+        aria-valuemin={0}
+        aria-valuemax={reachable}
+        aria-label="Facilities that have replied"
+        className="mt-2 h-2 w-full overflow-hidden rounded bg-sunk"
+      >
+        <div
+          className="h-full bg-ink transition-[width] duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {unreachable > 0 && (
+        <p className="mt-2 text-[14px] text-muted">
+          {unreachable}{" "}
+          {unreachable === 1 ? "facility publishes" : "facilities publish"} no
+          email address anywhere on the open web.{" "}
+          {unreachable === 1 ? "It stays" : "They stay"} on the board below with
+          the full inspection record and a phone number.
+        </p>
+      )}
     </div>
   );
 }
@@ -81,7 +162,7 @@ function Safety({
           onClick={() => onOpenFacility(row.ccn)}
           className="text-left underline underline-offset-4"
         >
-          {row.facilityName}
+          {facilityName(row.facilityName)}
         </button>
       </h3>
       <p className="mt-1 text-[16px] text-muted">
@@ -136,12 +217,21 @@ function Availability({ row }: { row: BoardRow }) {
       <div className="min-w-0">
         <ColumnLabel>Availability · what the facility told us</ColumnLabel>
         <p className="text-[16px] text-muted">{waitingLabel(row)}</p>
-        {row.noEmailFound && row.phone && (
+
+        {/* A facility with no address, or one whose address bounced, is not a
+            dead end — the federal record still carries a telephone number, and
+            that is the thing a family can act on. It leads, rather than
+            trailing a repetition of the bad news. */}
+        {(row.noEmailFound || row.status === "bounced") && row.phone && (
           <p className="mt-2 text-[16px]">
-            No address published on their website — call{" "}
-            <a className="underline underline-offset-4" href={`tel:${row.phone}`}>
+            Call{" "}
+            <a
+              className="font-medium underline underline-offset-4"
+              href={`tel:${row.phone}`}
+            >
               {row.phone}
             </a>
+            <span className="text-muted"> — from the federal record</span>
           </p>
         )}
         {row.status === "clarifying" && row.unansweredLabels.length > 0 && (
@@ -259,9 +349,18 @@ function Row({
         jeopardy ? "border-harm-edge" : "border-rule"
       }`}
     >
-      <div className="grid gap-6 p-5 sm:grid-cols-2 sm:gap-10">
-        <Safety row={row} onOpenFacility={onOpenFacility} />
-        <Availability row={row} />
+      {/* A ruled divider, not a gap. These two halves are different kinds of
+          claim — one is what a federal inspector recorded, the other is what
+          the facility says about itself — and separating them with whitespace
+          alone left a reader to infer the boundary from alignment. On a phone
+          the halves stack and the rule turns horizontal. */}
+      <div className="grid p-5 sm:grid-cols-2">
+        <div className="min-w-0 sm:pr-8">
+          <Safety row={row} onOpenFacility={onOpenFacility} />
+        </div>
+        <div className="mt-5 min-w-0 border-t border-rule pt-5 sm:mt-0 sm:border-l sm:border-t-0 sm:pl-8 sm:pt-0">
+          <Availability row={row} />
+        </div>
       </div>
 
       {/* The provenance strip: who we wrote to, from where, and what became of
@@ -272,9 +371,8 @@ function Row({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-sunk px-5 py-3 text-[14px] text-muted">
         {row.noEmailFound ? (
           <span>
-            No address for this facility anywhere on the open web — the federal
-            record publishes a telephone number and nothing else. It keeps its
-            place here with its full inspection record.
+            Searched the open web and found no address — it keeps its place here
+            with its full inspection record.
           </span>
         ) : (
           <>
@@ -301,7 +399,7 @@ function Row({
               className="ml-auto font-medium text-ink underline underline-offset-4"
             >
               Read the emails
-              <span className="sr-only"> from {row.facilityName}</span>
+              <span className="sr-only"> from {facilityName(row.facilityName)}</span>
             </button>
           </>
         )}
@@ -341,7 +439,7 @@ function Alerts({
       <ul className="mt-3 space-y-2 text-[16px]">
         {alerts.map((a) => (
           <li key={a.id}>
-            <span className="font-medium">{a.facilityName}</span> was cited for{" "}
+            <span className="font-medium">{facilityName(a.facilityName)}</span> was cited for{" "}
             {a.tagDescription.replace(/\.$/, "")}.{" "}
             <span className="text-muted">
               {a.kind === "new_immediate_jeopardy"
@@ -463,24 +561,67 @@ export function Board({
           {search.mustHaves.length > 0 && ` · ${search.mustHaves.join(" · ")}`}
         </p>
 
-        {/* Where the campaign is writing from, and whether anything real can
-            leave the building. Both are facts a judge should be able to check
-            on screen rather than take on trust. */}
+        {/* Where the campaign is writing from. A fact a judge should be able
+            to check on screen rather than take on trust. */}
         <p className="mt-2 text-[16px] leading-relaxed text-muted">
           Writing from{" "}
           <span className="font-medium text-ink">{search.inboxEmail}</span>
           {search.inboxMode === "shared"
-            ? " (shared inbox — this AgentMail plan issues one)"
-            : " (this search's own inbox)"}
-          {search.demoMode &&
-            " · Demo mode: every inquiry is routed to an inbox we control, and no real facility is emailed."}
+            ? " — a shared inbox, because this AgentMail plan issues one"
+            : " — this search's own inbox"}
         </p>
+
+        {/* Demo mode used to be the tail of the sentence above, in muted grey,
+            after the inbox address. It is the most important disclosure on the
+            page: it is the reason no understaffed nursing home receives
+            hackathon traffic. A deliberate choice that reads as an afterthought
+            looks like a limitation instead of a decision. */}
+        {search.demoMode && (
+          <p className="mt-3 rounded border-l-4 border-rule-strong bg-sunk px-4 py-3 text-[16px] leading-relaxed">
+            <span className="font-semibold">
+              No real facility is emailed by this demo.
+            </span>{" "}
+            Every inquiry below is addressed to an inbox we own. These are real
+            nursing homes with real inspection records, and they are understaffed
+            places caring for vulnerable people — so the letters are real, the
+            parsing is real, and the delivery is real, but the recipient is us.
+          </p>
+        )}
+
+        {/* What was actually asked. The right-hand column is full of answers to
+            questions the screen never stated, which left a reader to reverse
+            engineer the questions from the shape of the replies. */}
+        <div className="mt-5 border-t border-rule pt-4">
+          <h3 className="text-[14px] font-medium uppercase tracking-wide text-muted">
+            The same five questions went to every facility
+          </h3>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {QUESTION_KEYS.map((key) => (
+              <li
+                key={key}
+                className="rounded border border-rule px-2.5 py-1 text-[15px]"
+              >
+                {QUESTION_LABEL[key]}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[14px] text-muted">
+            None of the five is published anywhere — not by CMS, not by the
+            facility. Asking is the only way to find out, and a facility that
+            skips one gets asked again.
+          </p>
+        </div>
       </header>
 
-      {/* The live counter. Every number is a subscription. */}
+      {/* The live counter. Every number is a subscription.
+
+          Boxed and set large because this is the only thing on the screen that
+          changes without anyone touching it, and it has to be legible from
+          across a room — a family looking up from a phone, a judge watching a
+          recording at whatever size the player gives them. */}
       <div
         aria-live="polite"
-        className="mt-6 flex flex-wrap items-baseline gap-x-8 gap-y-3 border-y border-rule py-4"
+        className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded border border-rule bg-rule sm:grid-cols-3 lg:grid-cols-6"
       >
         <Counter value={counters.shortlisted} label="shortlisted" />
         <Counter value={counters.contacted} label="contacted" />
@@ -490,11 +631,36 @@ export function Board({
         <Counter value={counters.flagged} label="flagged for harm" harm />
       </div>
 
+      <CampaignProgress
+        replied={counters.replied}
+        shortlisted={counters.shortlisted}
+        unreachable={rows.filter((r) => r.noEmailFound).length}
+      />
+
       <Alerts alerts={alerts} />
 
-      <div className="mt-6 hidden gap-10 px-5 text-[14px] font-medium uppercase tracking-wide text-muted sm:grid sm:grid-cols-2">
-        <span>Safety · the federal inspection record</span>
-        <span>Availability · what the facility told us</span>
+      {/* The board has always been sorted — openings first, then by how badly
+          the inspection record reads, then by CMS rating. Nothing said so, so
+          twelve rows in a deliberate order were indistinguishable from twelve
+          rows in no order, and the most useful thing about the ordering was
+          invisible to the person it was for. */}
+      <p className="mt-8 text-[16px] text-muted">
+        Ordered by availability first, then by inspection record: facilities
+        with an opening rise to the top, and among those, the ones that have not
+        harmed anyone come first.
+      </p>
+
+      {/* Sticky, so the reader can still tell which half is the federal record
+          and which half is the facility's own account after scrolling past the
+          heading. The distinction is the entire product and it cannot be
+          allowed to scroll away. */}
+      <div className="sticky top-0 z-10 mt-3 hidden border-y border-rule bg-paper py-2 sm:grid sm:grid-cols-2 sm:gap-10 sm:px-5">
+        <span className="text-[14px] font-medium uppercase tracking-wide text-muted">
+          Safety · the federal inspection record
+        </span>
+        <span className="text-[14px] font-medium uppercase tracking-wide text-muted">
+          Availability · what the facility told us
+        </span>
       </div>
 
       {rows.length === 0 ? (

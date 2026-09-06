@@ -86,7 +86,7 @@ function ColdOpen({
   }
 
   return (
-    <section className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
+    <section className="mx-auto grid max-w-7xl gap-12 px-6 py-16 sm:py-20 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16">
       <div className="max-w-3xl">
       <h1 className="text-[30px] font-semibold leading-tight sm:text-[38px]">
         The service most families use to find a nursing home is paid{" "}
@@ -134,6 +134,151 @@ function ColdOpen({
         </div>
       )}
       </div>
+
+      <Scale />
+    </section>
+  );
+}
+
+/**
+ * The size of the thing, in three real numbers.
+ *
+ * The headline is an argument about someone else's business model, and an
+ * argument needs something to stand on. These are the figures behind it: how
+ * much public record exists, how little of it is readable, and the one number
+ * that separates this from a referral service. Every one is checkable — the
+ * first two against the CMS Provider Data Catalog, the third against the fact
+ * that there is no billing relationship to a facility anywhere in this product.
+ *
+ * It also gives the hero a right-hand side. Three hundred and sixty pixels of
+ * nothing beside a headline reads as a page that did not finish loading.
+ */
+function Scale() {
+  const figures = [
+    {
+      value: "14,690",
+      label: "Medicare-certified facilities in the federal record",
+    },
+    {
+      value: "419,479",
+      label:
+        "inspection findings published — as tag codes and severity letters almost nobody can read",
+    },
+    {
+      value: "$0",
+      label: "taken from facilities, ever. They cannot pay to appear here",
+    },
+  ];
+
+  return (
+    <aside className="lg:pt-2">
+      <h2 className="text-[14px] font-medium uppercase tracking-wide text-muted">
+        What Ombuds reads
+      </h2>
+      <dl className="mt-4 rounded border border-rule">
+        {figures.map((figure, i) => (
+          <div
+            key={figure.value}
+            className={`p-5 ${i > 0 ? "border-t border-rule" : ""}`}
+          >
+            <dt className="text-[30px] font-semibold leading-none tabular-nums">
+              {figure.value}
+            </dt>
+            <dd className="mt-2 text-[16px] leading-snug text-muted">
+              {figure.label}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </aside>
+  );
+}
+
+/**
+ * The sentence the whole product hangs on.
+ *
+ * Neither half is sufficient alone, and a reader who takes only one thing from
+ * this page should take this. It sits above the mechanism rather than below it
+ * because it is the claim; the three steps underneath are only how it is kept.
+ */
+function Thesis() {
+  return (
+    <section className="border-y border-rule bg-sunk">
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <p className="max-w-4xl text-[22px] font-medium leading-snug sm:text-[26px]">
+          Public records tell you whether a facility is{" "}
+          <span className="underline decoration-rule-strong underline-offset-4">
+            safe
+          </span>
+          . Only email tells you whether it is{" "}
+          <span className="underline decoration-rule-strong underline-offset-4">
+            available
+          </span>
+          .
+        </p>
+        <p className="mt-3 max-w-3xl text-[18px] leading-relaxed text-muted">
+          Ombuds does both, and takes no money from facilities.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The mechanism, in three steps.
+ *
+ * This exists because the product's hardest idea is a plumbing idea: the
+ * federal record publishes a telephone number and no email address, so there is
+ * no path from a government inspection record to a facility's inbox without
+ * going out to the open web and finding one. A reader who does not follow that
+ * cannot tell why any of this is difficult, and a paragraph explaining it gets
+ * skimmed. Three numbered steps do not.
+ *
+ * Each step names what does the work, because "we read the federal record" and
+ * "CMS publishes 14,690 certified facilities" are different sentences and only
+ * the second one can be checked.
+ */
+const STEPS = [
+  {
+    n: "1",
+    title: "Read the federal record",
+    body: "Every inspection failure, every fine, every staffing figure for 14,690 Medicare-certified facilities — published as tag codes and severity letters, and translated here into plain English.",
+    source: "CMS Provider Data Catalog · updated monthly",
+  },
+  {
+    n: "2",
+    title: "Find a way to reach them",
+    body: "The federal record carries a telephone number and no email address. So we search the open web for each facility's own site and pull the admissions address off it.",
+    source: "Firecrawl · search, map, scrape",
+  },
+  {
+    n: "3",
+    title: "Ask what nobody publishes",
+    body: "Openings, true all-in cost, waitlist, night staffing, tour dates. Every facility gets its own email thread. A vague answer gets asked again, in the same thread, without anyone pressing a button.",
+    source: "AgentMail · one inbox per search",
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section className="mx-auto max-w-7xl px-6 py-12">
+      <h2 className="text-[16px] font-medium uppercase tracking-wide text-muted">
+        How it works
+      </h2>
+      <ol className="mt-5 grid gap-px overflow-hidden rounded border border-rule bg-rule sm:grid-cols-3">
+        {STEPS.map((step) => (
+          <li key={step.n} className="flex flex-col bg-paper p-5">
+            <span className="text-[14px] font-semibold tabular-nums text-muted">
+              {step.n}
+            </span>
+            <h3 className="mt-1 text-[18px] font-semibold leading-snug">
+              {step.title}
+            </h3>
+            <p className="mt-2 text-[16px] leading-relaxed">{step.body}</p>
+            <p className="mt-auto pt-4 text-[14px] text-muted">{step.source}</p>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -195,22 +340,16 @@ export default function App() {
               ready={isAuthenticated}
               onStarted={(searchId) => setView({ name: "board", searchId })}
             />
-            <Compare ccns={DEMO_CCNS} />
-            <nav className="mx-auto max-w-7xl px-6 pb-16">
-              <h2 className="text-[16px] font-medium">Open the full record</h2>
-              <ul className="mt-3 flex flex-wrap gap-3">
-                {DEMO_CCNS.map((ccn) => (
-                  <li key={ccn}>
-                    <button
-                      onClick={() => setView({ name: "facility", ccn })}
-                      className="rounded border border-rule-strong px-4 py-2 text-[16px]"
-                    >
-                      CCN {ccn}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
+            <Thesis />
+            <HowItWorks />
+            {/* The facility names in these columns are the way into the full
+                record. A separate row of "CCN 055016" buttons underneath was
+                asking a family to click a federal certification number to find
+                out whose record it was. */}
+            <Compare
+              ccns={DEMO_CCNS}
+              onOpenFacility={(ccn) => setView({ name: "facility", ccn })}
+            />
             <LicensingCrawl />
           </ErrorBoundary>
         )}

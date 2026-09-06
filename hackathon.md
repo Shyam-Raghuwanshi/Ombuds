@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-05T20:14:58Z
+- **Last updated:** 2026-09-05T20:31:29Z
 
 ## Log
 
@@ -350,7 +350,7 @@ shipping provider switch in `convex/ai/provider.ts` is a one-variable change and
 is the next thing to do.
 
 
-### 2026-09-05 - working tree
+### 2026-09-05 - eb714ca
 Per-search AgentMail inboxes provision, which closes the first of the two gaps
 the last entry left open. There were two causes and both were real. The
 component ships its inbox and thread calls as `internalAction`, so a mounting
@@ -377,3 +377,48 @@ records who wrote each row, so a half-re-warmed cache can drop one provider's
 rows and keep the other's — two facilities described in two different registers
 is visible on camera (`convex/deficiencies.ts`). Production still runs the
 build-time provider; that remains the next thing to do.
+
+### 2026-09-05 - working tree
+A comprehension pass over the interface. No backend change: every number below
+was already a live Convex subscription, and this is the same data made legible.
+
+The front page now states what the product is before it states what is wrong
+with the incumbent. The thesis it was built around — public records tell you
+whether a facility is safe, only email tells you whether it is available — was
+nowhere on screen, and the mechanism that makes the second half possible was
+not shown at all, so a reader had no way to see why a federal record and an
+inbox are hard to connect. Both are now on the page, the second as three
+numbered steps naming what does the work at each one (`src/App.tsx`). The row
+of `CCN 055016` buttons is gone; the facility names in the comparison are the
+way into the full record, which is where a reader was already looking
+(`src/Compare.tsx`). That section also carried the page's second `<h1>` and
+opened with two dense paragraphs of caching and crawl statistics before a
+single fact about a nursing home — it is an `<h2>` now, and those notes sit
+underneath the records they annotate.
+
+On the board, the live counters are a boxed scoreboard rather than a line of
+small text, and a progress bar tracks replies against the facilities we can
+actually write to — never against the whole shortlist, since a facility that
+publishes no address can never answer and would hold the bar permanently short
+of the end. The board has always been sorted (openings first, then by
+inspection record) and never said so, so a deliberate order was
+indistinguishable from none; it says so now. The column headings are sticky,
+because the distinction between what an inspector recorded and what a facility
+claims is the whole product and should not scroll away, and each row rules its
+two halves apart instead of separating them with whitespace. The five questions
+every facility is asked are listed on the board — the right-hand column was
+full of answers to questions the screen never stated. The demo-mode disclosure
+was the tail of a muted sentence after the inbox address; it is its own notice
+now, because not sending hackathon traffic to understaffed nursing homes is a
+decision and reads as a limitation when it looks like an afterthought
+(`src/Board.tsx`).
+
+In a thread, outbound letters were labelled "The family". A family did not
+write them — an agent drafted them from what the family said it needed — so
+they now read "Ombuds, for the family", with a Sent/Reply marker on each
+message (`src/ThreadView.tsx`).
+
+One thing found and not fixed: `rankSearch` in `convex/agentLoop.ts` is a
+complete agent action, with its own tools and thread, that nothing calls. The
+ranking it would produce is a listed use of the model provider and is currently
+invisible in the product.

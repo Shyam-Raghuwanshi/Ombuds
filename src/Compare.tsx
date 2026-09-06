@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useLazyTranslate } from "./useLazyTranslate";
+import { facilityName } from "./facilityName";
 import { Loading } from "./ui";
 import { HARM_CHIP, HARM_LABEL, PATTERN_LABEL, fmtDate, type HarmLevel } from "./severity";
 
@@ -12,7 +13,13 @@ import { HARM_CHIP, HARM_LABEL, PATTERN_LABEL, fmtDate, type HarmLevel } from ".
  * see the difference in the raw tag codes.
  */
 
-function Column({ ccn }: { ccn: string }) {
+function Column({
+  ccn,
+  onOpenFacility,
+}: {
+  ccn: string;
+  onOpenFacility?: (ccn: string) => void;
+}) {
   const detail = useQuery(api.deficiencies.facilityDetail, { ccn });
   useLazyTranslate(ccn, detail != null);
 
@@ -45,7 +52,19 @@ function Column({ ccn }: { ccn: string }) {
         </p>
       )}
 
-      <h3 className="text-[17px] font-semibold leading-snug">{facility.name}</h3>
+      <h3 className="text-[17px] font-semibold leading-snug">
+        {onOpenFacility ? (
+          <button
+            onClick={() => onOpenFacility(ccn)}
+            className="text-left underline underline-offset-4"
+          >
+            {facilityName(facility.name)}
+            <span className="sr-only"> — open the full inspection record</span>
+          </button>
+        ) : (
+          facilityName(facility.name)
+        )}
+      </h3>
       <p className="mt-2 text-[14px] text-muted">
         {facility.city}, {facility.state} · {facility.certifiedBeds} beds ·{" "}
         {facility.overallRating > 0
@@ -204,24 +223,42 @@ function ReachLine({ ccns }: { ccns: string[] }) {
   );
 }
 
-export function Compare({ ccns }: { ccns: string[] }) {
+export function Compare({
+  ccns,
+  onOpenFacility,
+}: {
+  ccns: string[];
+  onOpenFacility?: (ccn: string) => void;
+}) {
   return (
-    <section className="mx-auto max-w-7xl px-6 py-10">
-      <h1 className="text-3xl font-semibold leading-tight">
+    <section className="mx-auto max-w-7xl px-6 py-12">
+      {/* h2, not h1. The page already has one, at the top, and a second
+          top-level heading halfway down leaves a screen reader — and a judge
+          skimming — with two competing claims about what this page is. */}
+      <h2 className="text-[24px] font-semibold leading-tight sm:text-[28px]">
         Three facilities, three very different records
-      </h1>
+      </h2>
       <p className="mt-3 max-w-3xl text-[18px] leading-relaxed text-muted">
         All three are real, Medicare-certified nursing homes in California. All
         the data below comes from the same federal inspection programme. The
         raw record is published as tag codes and severity letters; this is the
         same record in plain English.
       </p>
-      <CacheLine />
-      <ReachLine ccns={ccns} />
+
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         {ccns.map((ccn) => (
-          <Column key={ccn} ccn={ccn} />
+          <Column key={ccn} ccn={ccn} onOpenFacility={onOpenFacility} />
         ))}
+      </div>
+
+      {/* Both of these are notes on method, and they used to sit between the
+          heading and the records they are about — so a reader met two dense
+          paragraphs of caching and crawl statistics before reaching a single
+          fact about a nursing home. They belong underneath, as footnotes to
+          the thing they describe. */}
+      <div className="mt-6 border-t border-rule pt-4">
+        <CacheLine />
+        <ReachLine ccns={ccns} />
       </div>
     </section>
   );

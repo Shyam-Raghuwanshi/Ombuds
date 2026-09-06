@@ -1,4 +1,5 @@
 import { useQuery } from "convex/react";
+import { facilityName } from "./facilityName";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtTime } from "./board";
@@ -34,13 +35,23 @@ function Message({
     <li
       className={`rounded border p-4 ${
         outbound
-          ? "border-rule"
-          : "border-rule bg-sunk  "
+          ? "border-l-4 border-rule border-l-rule-strong"
+          : "border-rule bg-sunk"
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {/* "The family" was the wrong name for this. A family did not write
+            this letter — an agent drafted it from what they said they needed,
+            and sent it over their name. Everywhere else this product is exact
+            about who is making a claim, and the sender of a letter is not the
+            place to stop being exact. */}
         <span className="text-[15px] font-semibold">
-          {outbound ? "The family" : message.fromAddress || "The facility"}
+          {outbound
+            ? "Ombuds, for the family"
+            : message.fromAddress || "The facility"}
+        </span>
+        <span className="rounded border border-rule px-1.5 py-0.5 text-[13px] font-medium uppercase tracking-wide text-muted">
+          {outbound ? "Sent" : "Reply"}
         </span>
         <span className="text-[14px] text-muted">
           {fmtTime(message.createdAt)} · round {message.round}
@@ -118,7 +129,9 @@ export function ThreadView({
         Back to the board
       </button>
 
-      <h2 className="mt-4 text-[22px] font-semibold">{thread.facilityName}</h2>
+      <h2 className="mt-4 text-[22px] font-semibold">
+        {facilityName(thread.facilityName)}
+      </h2>
       <p className="mt-1 text-[16px] text-muted">
         {thread.inboxEmail} → {thread.toEmail}
         {thread.deliveryStatus && ` · AgentMail: ${thread.deliveryStatus}`}

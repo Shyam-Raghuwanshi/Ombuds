@@ -1,4 +1,5 @@
 import { useQuery } from "convex/react";
+import { facilityName } from "./facilityName";
 import { api } from "../convex/_generated/api";
 import { ContactPanel } from "./ContactPanel";
 import { Empty, Loading, Provenance } from "./ui";
@@ -201,7 +202,9 @@ export function FacilityDetail({
 
       <ImmediateJeopardyBanner citations={immediateJeopardy as Citation[]} />
 
-      <h1 className="text-3xl font-semibold leading-tight">{facility.name}</h1>
+      <h1 className="text-3xl font-semibold leading-tight">
+        {facilityName(facility.name)}
+      </h1>
       <p className="mt-2 text-[16px] text-muted">
         {facility.city}, {facility.state} {facility.zip} · {facility.phone} ·{" "}
         {facility.certifiedBeds} certified beds · {facility.ownershipType}

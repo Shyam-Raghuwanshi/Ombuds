@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { facilityName } from "./facilityName";
 import { useAction, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 
@@ -238,7 +239,7 @@ export function LicensingCrawl() {
                 key={`${facility.name}-${facility.zip}`}
                 className="border-t border-rule py-3"
               >
-                <p className="text-[16px] font-medium">{facility.name}</p>
+                <p className="text-[16px] font-medium">{facilityName(facility.name)}</p>
                 <p className="text-[16px] text-muted">
                   {facility.address}, {facility.city} {facility.zip} ·{" "}
                   {facility.phone} · {facility.careTypes.join(", ")}
