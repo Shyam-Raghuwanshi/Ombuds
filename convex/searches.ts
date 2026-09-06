@@ -846,3 +846,103 @@ export const mySearches = query({
       }));
   },
 });
+
+// =============================================================================
+// Facilities whose address arrived late
+// =============================================================================
+
+/**
+ * Queue the facilities that had no address when the campaign started.
+ *
+ * The judge cold-open runs against twelve facilities that were enriched days
+ * ago, so every address is already known when the fan-out happens. A family
+ * searching their own ZIP is the opposite case: their twelve homes have never
+ * been looked at, Firecrawl is still out on the open web finding websites, and
+ * a campaign that fired immediately would mark all twelve `no_email_found` and
+ * settle there — a board with a full safety record and not one conversation.
+ *
+ * Rather than make the family wait behind discovery, the campaign starts at
+ * once and this runs behind it: any inquiry still marked as having no address,
+ * whose facility has since acquired one, is upgraded in place and sent. The
+ * board fills from the left immediately and from the right as addresses land.
+ */
+export const backfillDiscoveredEmails = internalMutation({
+  args: { searchId: v.id("searches") },
+  returns: v.object({ queued: v.number(), stillMissing: v.number() }),
+  handler: async (ctx, { searchId }) => {
+    const search = await ctx.db.get(searchId);
+    if (!search) return { queued: 0, stillMissing: 0 };
+
+    const inquiries = await ctx.db
+      .query("inquiries")
+      .withIndex("by_search", (q) => q.eq("searchId", searchId))
+      .collect();
+
+    const demoInbox = await ctx.db
+      .query("agentInboxes")
+      .withIndex("by_purpose", (q) => q.eq("purpose", "demo_facilities"))
+      .unique();
+    if (!demoInbox) return { queued: 0, stillMissing: 0 };
+
+    // Personas are assigned by position so a search always meets the same
+    // spread of outcomes — an opening, a waitlist, a dodge, a dead address —
+    // regardless of which facilities happened to be reachable.
+    let rosterIndex = inquiries.filter((i) => i.simulated).length;
+    let queued = 0;
+    let stillMissing = 0;
+
+    for (const inquiry of inquiries) {
+      if (!inquiry.noEmailFound) continue;
+
+      const facility = await ctx.db
+        .query("facilities")
+        .withIndex("by_ccn", (q) => q.eq("ccn", inquiry.ccn))
+        .unique();
+      if (!facility?.contactEmail) {
+        stillMissing += 1;
+        continue;
+      }
+
+      const recipient = resolveRecipient({
+        facilityEmail: facility.contactEmail,
+        demoInboxEmail: demoInbox.email,
+      });
+      const persona = recipient.simulated
+        ? PERSONAS[PERSONA_ROSTER[rosterIndex % PERSONA_ROSTER.length]]
+        : null;
+
+      await ctx.db.patch(inquiry._id, {
+        toEmail: recipient.to,
+        status: "queued",
+        simulated: recipient.simulated,
+        persona: persona?.key,
+        intendedTo: recipient.intendedTo ?? undefined,
+        noEmailFound: false,
+      });
+
+      if (persona) {
+        await ctx.db.insert("simulatedFacilities", {
+          searchId,
+          ccn: facility.ccn,
+          inboxId: demoInbox.inboxId,
+          persona: persona.key,
+          responseDelayMs: replyDelayMs(rosterIndex),
+        });
+        rosterIndex += 1;
+      }
+
+      await inquiryPool.enqueueAction(ctx, internal.email.sendInquiryWorker, {
+        inquiryId: inquiry._id,
+      });
+      queued += 1;
+    }
+
+    if (queued > 0 || stillMissing > 0) {
+      console.log(
+        `[searches] backfill for ${searchId}: ${queued} newly reachable, ` +
+          `${stillMissing} still with no published address`,
+      );
+    }
+    return { queued, stillMissing };
+  },
+});

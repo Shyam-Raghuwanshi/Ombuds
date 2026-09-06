@@ -9,6 +9,7 @@ import { Compare } from "./Compare";
 import { FacilityDetail } from "./FacilityDetail";
 import { LicensingCrawl } from "./LicensingCrawl";
 import { ErrorBoundary, ErrorState, Loading, ThemeToggle } from "./ui";
+import NewSearch from "./NewSearch";
 
 /**
  * Anonymous sign-in fires silently on mount, so a judge opening the live URL
@@ -62,9 +63,11 @@ const DEMO_CCNS = ["055016", "055085", "056487"];
  */
 function ColdOpen({
   onStarted,
+  onSearchOwn,
   ready,
 }: {
   onStarted: (id: Id<"searches">) => void;
+  onSearchOwn: () => void;
   ready: boolean;
 }) {
   const run = useAction(api.searches.runSampleSearch);
@@ -116,6 +119,22 @@ function ColdOpen({
       <p className="mt-3 text-[16px] text-muted">
         Twelve real Medicare-certified facilities near Pomona, California, with
         their real inspection records. No sign-up, no email address, no form.
+      </p>
+
+      {/* The sample search is for someone who has never seen this. Anyone with
+          a parent and a town of their own needs the other door, and it has to
+          be visible without scrolling — a family in a hospital waiting room
+          should not have to work out that the demo is not the product. */}
+      <p className="mt-6 text-[17px]">
+        <button
+          onClick={onSearchOwn}
+          className="font-semibold underline underline-offset-4"
+        >
+          Or search your own ZIP code
+        </button>{" "}
+        <span className="text-muted">
+          — every certified facility near you, ranked by its inspection record.
+        </span>
       </p>
 
       {!ready && !error && (
@@ -285,6 +304,7 @@ function HowItWorks() {
 
 type View =
   | { name: "home" }
+  | { name: "new" }
   | { name: "board"; searchId: Id<"searches"> }
   | { name: "thread"; searchId: Id<"searches">; inquiryId: Id<"inquiries"> }
   | { name: "facility"; ccn: string };
@@ -338,6 +358,7 @@ export default function App() {
           <ErrorBoundary fallbackLabel="on the front page" onReset={goHome}>
             <ColdOpen
               ready={isAuthenticated}
+              onSearchOwn={() => setView({ name: "new" })}
               onStarted={(searchId) => setView({ name: "board", searchId })}
             />
             <Thesis />
@@ -351,6 +372,16 @@ export default function App() {
               onOpenFacility={(ccn) => setView({ name: "facility", ccn })}
             />
             <LicensingCrawl />
+          </ErrorBoundary>
+        )}
+
+        {view.name === "new" && (
+          <ErrorBoundary fallbackLabel="on the search form" onReset={goHome}>
+            <NewSearch
+              ready={isAuthenticated}
+              onCancel={goHome}
+              onStarted={(searchId) => setView({ name: "board", searchId })}
+            />
           </ErrorBoundary>
         )}
 

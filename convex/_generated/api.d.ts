@@ -19,6 +19,7 @@ import type * as deficiencies from "../deficiencies.js";
 import type * as demo from "../demo.js";
 import type * as email from "../email.js";
 import type * as enrichment from "../enrichment.js";
+import type * as geo from "../geo.js";
 import type * as http from "../http.js";
 import type * as lib_contact from "../lib/contact.js";
 import type * as lib_firecrawlErrors from "../lib/firecrawlErrors.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   demo: typeof demo;
   email: typeof email;
   enrichment: typeof enrichment;
+  geo: typeof geo;
   http: typeof http;
   "lib/contact": typeof lib_contact;
   "lib/firecrawlErrors": typeof lib_firecrawlErrors;

@@ -113,7 +113,12 @@ export default defineSchema({
     .index("by_zip", ["zip"])
     .index("by_state_city", ["state", "city"])
     .index("by_rating", ["overallRating"])
-    .index("by_contact_status", ["contactStatus"]),
+    .index("by_contact_status", ["contactStatus"])
+    // Radius search reads a latitude band and refines it in the handler. The
+    // alternative is scanning all 14,690 rows, which is both slow and close to
+    // a query's read limit; a 25-mile band is a few hundred rows anywhere in
+    // the country.
+    .index("by_latitude", ["latitude"]),
 
   deficiencies: defineTable({
     ccn: v.string(),
@@ -511,4 +516,26 @@ export default defineSchema({
     mode: v.union(v.literal("dedicated"), v.literal("shared")),
     createdAt: v.number(),
   }).index("by_purpose", ["purpose"]),
+
+  // Where a ZIP code is, so a family's "near me" has an origin to measure from.
+  //
+  // CMS ships latitude/longitude on every facility but publishes nothing about
+  // ZIP codes themselves, and a family types a ZIP, not a coordinate. Rather
+  // than take a geocoding dependency for one number, each ZIP's centre is
+  // averaged from the facilities CMS already places inside it — derived from
+  // data we already hold, and exact enough for a 25-mile radius.
+  //
+  // `zip3` is the first three digits, which is a real postal unit (the
+  // sectional centre). It is the fallback for a ZIP with no certified facility
+  // of its own — roughly a county-sized area, and a far better answer than
+  // refusing the search.
+  zipCentroids: defineTable({
+    zip: v.string(),
+    zip3: v.string(),
+    latitude: v.number(),
+    longitude: v.number(),
+    facilityCount: v.number(),
+  })
+    .index("by_zip", ["zip"])
+    .index("by_zip3", ["zip3"]),
 });
