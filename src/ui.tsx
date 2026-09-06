@@ -28,14 +28,14 @@ import { Component, useEffect, useState, type ReactNode } from "react";
  * facilities' harm records defensible.
  */
 export function Provenance({ children }: { children: ReactNode }) {
-  return <p className="mt-1 text-[14px] leading-normal text-muted">{children}</p>;
+  return <p className="t-meta measure mt-1.5">{children}</p>;
 }
 
 /** A federal figure. Always carries the date it was inspected. */
 export function FederalSource({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-1 text-[14px] leading-normal text-muted">
-      <span className="font-medium">Federal record</span> · {children}
+    <p className="t-meta measure mt-1.5">
+      <span className="font-semibold">Federal record</span> · {children}
     </p>
   );
 }
@@ -43,8 +43,8 @@ export function FederalSource({ children }: { children: ReactNode }) {
 /** A facility's own claim. Always carries the date they told us. */
 export function ReportedSource({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-1 text-[14px] leading-normal text-muted">
-      <span className="font-medium">Reported by the facility</span> · {children}
+    <p className="t-meta measure mt-1.5">
+      <span className="font-semibold">Reported by the facility</span> · {children}
     </p>
   );
 }
@@ -59,7 +59,7 @@ export function ReportedSource({ children }: { children: ReactNode }) {
  */
 export function Loading({ what }: { what: string }) {
   return (
-    <p className="flex items-center gap-2 text-[16px] text-muted" aria-live="polite">
+    <p className="t-body flex items-center gap-2 text-muted" aria-live="polite">
       <span
         aria-hidden
         className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-rule-strong"
@@ -82,13 +82,9 @@ export function Empty({
   children?: ReactNode;
 }) {
   return (
-    <div className="rounded border border-rule p-6">
-      <p className="text-[16px] font-medium">{title}</p>
-      {children && (
-        <p className="mt-1 max-w-2xl text-[16px] leading-relaxed text-muted">
-          {children}
-        </p>
-      )}
+    <div className="rounded-lg bg-sunk p-5">
+      <p className="t-name">{title}</p>
+      {children && <p className="t-body measure mt-1.5 text-muted">{children}</p>}
     </div>
   );
 }
@@ -109,18 +105,11 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="rounded border-l-4 border-rule-strong bg-sunk p-4" role="alert">
-      <p className="text-[16px] font-medium">{title}</p>
-      {detail && (
-        <p className="mt-1 max-w-2xl text-[16px] leading-relaxed text-muted">
-          {detail}
-        </p>
-      )}
+    <div className="rounded-lg border-l-4 border-rule-strong bg-sunk p-4" role="alert">
+      <p className="t-name">{title}</p>
+      {detail && <p className="t-body measure mt-1.5 text-muted">{detail}</p>}
       {onRetry && (
-        <button
-          onClick={onRetry}
-          className="mt-3 rounded border border-rule-strong px-3 py-1.5 text-[16px] font-medium hover:bg-paper"
-        >
+        <button onClick={onRetry} className="btn btn-quiet mt-3">
           Try again
         </button>
       )}
@@ -228,10 +217,10 @@ export function ThemeToggle() {
         return (
           <label
             key={option.value}
-            className={`theme-option cursor-pointer rounded px-2 py-1 text-[14px] ${
+            className={`theme-option t-meta cursor-pointer rounded px-2.5 py-1 ${
               active
-                ? "border border-rule-strong font-medium"
-                : "border border-transparent text-muted hover:text-ink"
+                ? "border border-rule-strong font-semibold text-ink"
+                : "border border-transparent hover:bg-sunk hover:text-ink"
             }`}
           >
             <input

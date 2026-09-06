@@ -25,7 +25,7 @@ function Column({
 
   if (!detail) {
     return (
-      <div className="rounded border border-rule p-5">
+      <div className="card p-5">
         <Loading what="Loading this facility's record…" />
       </div>
     );
@@ -37,27 +37,20 @@ function Column({
 
   return (
     <div
-      className={`flex flex-col rounded border p-5 ${
-        hasJeopardy
-          ? "border-harm-edge"
-          : "border-rule"
-      }`}
+      className={`card flex flex-col p-5 ${hasJeopardy ? "border-harm-edge" : ""}`}
     >
       {hasJeopardy && (
         <p
           role="alert"
-          className="-mx-5 -mt-5 mb-4 rounded-t bg-harm-solid px-5 py-2 text-[14px] font-semibold text-white"
+          className="surface-harm t-meta -mx-5 -mt-5 mb-4 rounded-t-lg bg-harm-solid px-5 py-2 font-bold text-on-harm"
         >
           Immediate jeopardy on record ({counts.immediateJeopardy})
         </p>
       )}
 
-      <h3 className="text-[17px] font-semibold leading-snug">
+      <h3 className="t-name">
         {onOpenFacility ? (
-          <button
-            onClick={() => onOpenFacility(ccn)}
-            className="text-left underline underline-offset-4"
-          >
+          <button onClick={() => onOpenFacility(ccn)} className="link text-left">
             {facilityName(facility.name)}
             <span className="sr-only"> — open the full inspection record</span>
           </button>
@@ -65,90 +58,69 @@ function Column({
           facilityName(facility.name)
         )}
       </h3>
-      <p className="mt-2 text-[14px] text-muted">
+      <p className="t-meta mt-1.5">
         {facility.city}, {facility.state} · {facility.certifiedBeds} beds ·{" "}
         {facility.overallRating > 0
           ? `${facility.overallRating}★ CMS overall`
           : "no CMS rating published"}
       </p>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2 border-y border-rule py-3 text-center">
+      <dl className="mt-4 grid grid-cols-3 gap-2 border-y border-rule py-4">
         <div>
-          <dd className="text-[20px] font-semibold">{counts.total}</dd>
-          <dt className="text-[14px] text-muted">
-            findings
-          </dt>
+          <dd className="t-figure">{counts.total}</dd>
+          <dt className="t-label mt-1">findings</dt>
         </div>
         <div>
-          <dd
-            className={`text-[20px] font-semibold ${
-              counts.actualHarm ? "text-harm" : ""
-            }`}
-          >
+          <dd className={`t-figure ${counts.actualHarm ? "text-harm" : ""}`}>
             {counts.actualHarm}
           </dd>
-          <dt className="text-[14px] text-muted">
-            actual harm
-          </dt>
+          <dt className="t-label mt-1">actual harm</dt>
         </div>
         <div>
           <dd
-            className={`text-[20px] font-semibold ${
-              counts.immediateJeopardy ? "text-harm" : ""
-            }`}
+            className={`t-figure ${counts.immediateJeopardy ? "text-harm" : ""}`}
           >
             {counts.immediateJeopardy}
           </dd>
-          <dt className="text-[14px] text-muted">
-            jeopardy
-          </dt>
+          <dt className="t-label mt-1">jeopardy</dt>
         </div>
       </dl>
 
-      <h4 className="mt-4 text-[14px] font-medium uppercase tracking-wide text-muted">
-        The pattern over time
-      </h4>
+      <h4 className="t-label mt-5">The pattern over time</h4>
       {riskSummary ? (
         <>
-          <p className="mt-2 text-[16px] leading-relaxed">{riskSummary.summary}</p>
-          <p className="mt-2 text-[14px] text-muted">
+          <p className="t-body mt-2">{riskSummary.summary}</p>
+          <p className="t-meta mt-2">
             {PATTERN_LABEL[riskSummary.pattern] ?? riskSummary.pattern} · written
             by {riskSummary.model}
           </p>
         </>
       ) : (
-        <p className="mt-2 text-[16px] text-muted">
-          Reading {counts.total} findings…
-        </p>
+        <p className="t-body mt-2 text-muted">Reading {counts.total} findings…</p>
       )}
 
-      <h4 className="mt-4 text-[14px] font-medium uppercase tracking-wide text-muted">
-        Most serious finding
-      </h4>
+      <h4 className="t-label mt-5">Most serious finding</h4>
       {worst ? (
         <>
           <span
-            className={`mt-1 inline-block self-start rounded border px-2 py-0.5 text-[14px] font-medium ${
+            className={`t-meta mt-2 inline-block self-start rounded border px-2 py-0.5 font-semibold ${
               HARM_CHIP[worst.harmLevel as HarmLevel]
             }`}
           >
             {HARM_LABEL[worst.harmLevel as HarmLevel]}
           </span>
-          <p className="mt-2 text-[16px] leading-relaxed">
-            {worst.full ?? "Translating…"}
-          </p>
-          <p className="mt-2 text-[14px] text-muted">
-            {worst.tag} · scope/severity {worst.scopeSeverity} · inspected{" "}
+          <p className="t-body mt-2">{worst.full ?? "Translating…"}</p>
+          <p className="t-meta mt-2">
+            <span className="t-code">{worst.tag}</span> · scope/severity{" "}
+            <span className="t-code">{worst.scopeSeverity}</span> · inspected{" "}
             {fmtDate(worst.surveyDate)}
           </p>
         </>
       ) : (
-        <p className="mt-2 text-[16px] text-muted">
-          No findings on record.
-        </p>
+        <p className="t-body mt-2 text-muted">No findings on record.</p>
       )}
 
-      <p className="mt-auto pt-4 text-[14px] text-muted">
+      <p className="t-meta mt-auto pt-5">
         {immediateJeopardy.length > 0
           ? `Jeopardy findings: ${immediateJeopardy
               .map((c) => fmtDate(c.surveyDate))
@@ -164,7 +136,7 @@ function CacheLine({ ccns }: { ccns: string[] }) {
   const stats = useQuery(api.deficiencies.cacheStats, { ccns });
   if (!stats) return null;
   return (
-    <p className="mt-2 text-[14px] text-muted">
+    <p className="t-meta measure mt-2">
       {stats.cachedMeanings} distinct meanings translated so far, covering{" "}
       {stats.citationsCovered} of the {stats.citationsTotal} citations on these
       facilities. A meaning is cached by tag and severity, so it is written once
@@ -203,7 +175,7 @@ function ReachLine({ ccns }: { ccns: string[] }) {
   const settled = status.total - status.unstarted - status.pending;
 
   return (
-    <p className="mt-2 text-[14px] text-muted">
+    <p className="t-meta measure mt-2">
       {settled < status.total ? (
         <>Looking for a way to contact {status.total} facilities… </>
       ) : (
@@ -236,10 +208,8 @@ export function Compare({
       {/* h2, not h1. The page already has one, at the top, and a second
           top-level heading halfway down leaves a screen reader — and a judge
           skimming — with two competing claims about what this page is. */}
-      <h2 className="text-[24px] font-semibold leading-tight sm:text-[28px]">
-        Three facilities, three very different records
-      </h2>
-      <p className="mt-3 max-w-3xl text-[18px] leading-relaxed text-muted">
+      <h2 className="t-title">Three facilities, three very different records</h2>
+      <p className="t-lede measure mt-3 text-muted">
         All three are real, Medicare-certified nursing homes in California. All
         the data below comes from the same federal inspection programme. The
         raw record is published as tag codes and severity letters; this is the

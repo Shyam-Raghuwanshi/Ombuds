@@ -68,8 +68,8 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
 
   return (
     <div className="mt-4">
-      <p className="text-[16px]">
-        <span className="font-medium">{progress.portalName}</span>{" "}
+      <p className="t-body">
+        <span className="font-bold">{progress.portalName}</span>{" "}
         <span className="text-muted">
           · {progress.status}
           {running ? " — reading pages now" : ""}
@@ -81,37 +81,29 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
         total={progress.total ?? Math.max(1, progress.pageCount)}
       />
 
-      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
         <div>
-          <dt className="text-[14px] text-muted">
-            Pages read
-          </dt>
-          <dd className="text-[17px] font-medium tabular-nums">
+          <dt className="t-label">Pages read</dt>
+          <dd className="t-figure mt-1.5">
             {progress.completed ?? progress.pageCount}
             {progress.total !== null ? ` of ${progress.total}` : ""}
           </dd>
         </div>
         <div>
-          <dt className="text-[14px] text-muted">
-            Stored in Convex
-          </dt>
-          <dd className="text-[17px] font-medium tabular-nums">
+          <dt className="t-label">Stored in Convex</dt>
+          <dd className="t-figure mt-1.5">
             {progress.pageCount}
           </dd>
         </div>
         <div>
-          <dt className="text-[14px] text-muted">
-            Facilities found
-          </dt>
-          <dd className="text-[17px] font-medium tabular-nums">
+          <dt className="t-label">Facilities found</dt>
+          <dd className="t-figure mt-1.5">
             {progress.facilitiesExtracted}
           </dd>
         </div>
         <div>
-          <dt className="text-[14px] text-muted">
-            Firecrawl credits
-          </dt>
-          <dd className="text-[17px] font-medium tabular-nums">
+          <dt className="t-label">Firecrawl credits</dt>
+          <dd className="t-figure mt-1.5">
             {progress.creditsUsed ?? 0}
           </dd>
         </div>
@@ -125,15 +117,12 @@ function CrawlMonitor({ crawlId }: { crawlId: string }) {
 
       {pages.length > 0 && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-[16px] text-muted underline underline-offset-2">
+          <summary className="t-body link cursor-pointer text-muted">
             Pages this crawl has read
           </summary>
           <ul className="mt-2 space-y-1">
             {pages.map((page) => (
-              <li
-                key={page._id}
-                className="break-all text-[14px] text-muted"
-              >
+              <li key={page._id} className="t-meta t-code break-all">
                 {page.url}
               </li>
             ))}
@@ -185,10 +174,8 @@ export function LicensingCrawl() {
 
   return (
     <section className="mx-auto max-w-7xl px-6 py-10">
-      <h2 className="text-2xl font-semibold">
-        What the federal record does not cover
-      </h2>
-      <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">
+      <h2 className="t-title">What the federal record does not cover</h2>
+      <p className="t-lede measure mt-3">
         Everything above comes from the federal inspection record, which covers
         Medicare-certified <em>nursing homes</em>. Assisted living, adult homes,
         and enriched housing are licensed by the states, and the federal
@@ -199,8 +186,8 @@ export function LicensingCrawl() {
       </p>
 
       {coverage && coverage.licensedCount > 0 && (
-        <p className="mt-4 text-[17px]">
-          <span className="text-3xl font-semibold tabular-nums">
+        <p className="t-body measure mt-5">
+          <span className="t-figure align-baseline">
             {coverage.licensedCount}
           </span>{" "}
           facilities {coverage.state} licenses that have no federal inspection
@@ -211,7 +198,7 @@ export function LicensingCrawl() {
       <button
         onClick={() => void run()}
         disabled={starting}
-        className="mt-4 rounded border border-rule-strong px-4 py-2 text-[16px] font-medium disabled:opacity-50"
+        className="btn btn-quiet mt-5"
       >
         {starting ? "Starting the crawl…" : "Crawl the state register now"}
       </button>
@@ -230,17 +217,15 @@ export function LicensingCrawl() {
 
       {coverage && coverage.sample.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-[15px] font-medium">
-            A few of the facilities this crawl found
-          </h3>
+          <h3 className="t-name">A few of the facilities this crawl found</h3>
           <ul className="mt-2">
             {coverage.sample.map((facility) => (
               <li
                 key={`${facility.name}-${facility.zip}`}
                 className="border-t border-rule py-3"
               >
-                <p className="text-[16px] font-medium">{facilityName(facility.name)}</p>
-                <p className="text-[16px] text-muted">
+                <p className="t-name">{facilityName(facility.name)}</p>
+                <p className="t-meta mt-1">
                   {facility.address}, {facility.city} {facility.zip} ·{" "}
                   {facility.phone} · {facility.careTypes.join(", ")}
                 </p>
@@ -253,7 +238,7 @@ export function LicensingCrawl() {
               href={coverage.registerUrl ?? coverage.url}
               target="_blank"
               rel="noreferrer noopener"
-              className="underline underline-offset-2 break-all"
+              className="link break-all"
             >
               {coverage.registerUrl ?? coverage.url}
             </a>

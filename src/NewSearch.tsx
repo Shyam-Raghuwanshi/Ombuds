@@ -132,10 +132,8 @@ export default function NewSearch({
   return (
     <section className="mx-auto grid max-w-7xl gap-12 px-6 py-12 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-16">
       <div>
-        <h1 className="text-[28px] font-semibold leading-tight sm:text-[32px]">
-          Search where you are actually looking
-        </h1>
-        <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-muted">
+        <h1 className="t-title">Search where you are actually looking</h1>
+        <p className="t-lede measure mt-4 text-muted">
           Ombuds reads the federal inspection record for every Medicare-certified
           facility near you, then emails each one on your shortlist to ask what
           is never published. Nothing here is paid for by a facility.
@@ -144,7 +142,7 @@ export default function NewSearch({
         <form onSubmit={submit} className="mt-8 max-w-2xl">
           <div className="grid gap-6 sm:grid-cols-2">
             <div>
-              <label htmlFor="zip" className="block text-[15px] font-medium">
+              <label htmlFor="zip" className="t-name block">
                 ZIP code
               </label>
               <input
@@ -154,22 +152,20 @@ export default function NewSearch({
                 placeholder="91767"
                 value={zip}
                 onChange={(e) => setZip(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))}
-                className="mt-2 w-full rounded border border-rule-strong bg-transparent px-3 py-2.5 text-[16px] tabular-nums"
+                className="t-body mt-2 w-full rounded-md border border-rule-strong bg-transparent px-3 py-2.5 tabular-nums"
               />
-              <p className="mt-1.5 text-[14px] text-muted">
-                Where they will be living.
-              </p>
+              <p className="t-meta mt-1.5">Where they will be living.</p>
             </div>
 
             <div>
-              <label htmlFor="radius" className="block text-[15px] font-medium">
+              <label htmlFor="radius" className="t-name block">
                 How far you would travel
               </label>
               <select
                 id="radius"
                 value={radiusMiles}
                 onChange={(e) => setRadius(Number(e.target.value))}
-                className="mt-2 w-full rounded border border-rule-strong bg-transparent px-3 py-2.5 text-[16px]"
+                className="t-body mt-2 w-full rounded-md border border-rule-strong bg-paper px-3 py-2.5"
               >
                 {RADII.map((r) => (
                   <option key={r} value={r}>
@@ -181,17 +177,15 @@ export default function NewSearch({
           </div>
 
           <fieldset className="mt-8">
-            <legend className="text-[15px] font-medium">
-              What kind of care do they need?
-            </legend>
+            <legend className="t-name">What kind of care do they need?</legend>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {CARE_LEVELS.map((c) => {
                 const active = careLevel === c.value;
                 return (
                   <label
                     key={c.value}
-                    className={`cursor-pointer rounded border p-3 ${
-                      active ? "border-rule-strong" : "border-rule"
+                    className={`cursor-pointer rounded-md border p-3 hover:border-rule-strong ${
+                      active ? "border-rule-strong bg-sunk" : "border-rule"
                     }`}
                   >
                     <input
@@ -202,14 +196,10 @@ export default function NewSearch({
                       onChange={() => setCareLevel(c.value)}
                       className="sr-only"
                     />
-                    <span
-                      className={`block text-[15px] ${active ? "font-semibold" : ""}`}
-                    >
+                    <span className={`block ${active ? "t-name" : "t-body"}`}>
                       {c.label}
                     </span>
-                    <span className="mt-0.5 block text-[14px] leading-snug text-muted">
-                      {c.hint}
-                    </span>
+                    <span className="t-meta mt-1 block">{c.hint}</span>
                   </label>
                 );
               })}
@@ -218,8 +208,9 @@ export default function NewSearch({
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
             <div>
-              <label htmlFor="budget" className="block text-[15px] font-medium">
-                Monthly budget <span className="text-muted">(optional)</span>
+              <label htmlFor="budget" className="t-name block">
+                Monthly budget{" "}
+                <span className="font-normal text-muted">(optional)</span>
               </label>
               <input
                 id="budget"
@@ -227,34 +218,36 @@ export default function NewSearch({
                 placeholder="7000"
                 value={budget}
                 onChange={(e) => setBudget(e.target.value)}
-                className="mt-2 w-full rounded border border-rule-strong bg-transparent px-3 py-2.5 text-[16px] tabular-nums"
+                className="t-body mt-2 w-full rounded-md border border-rule-strong bg-transparent px-3 py-2.5 tabular-nums"
               />
-              <p className="mt-1.5 text-[14px] text-muted">
+              <p className="t-meta measure mt-1.5">
                 Used to ask each facility the right question about cost. Never
                 used to hide a home from you.
               </p>
             </div>
 
             <div>
-              <label htmlFor="label" className="block text-[15px] font-medium">
-                Name this search <span className="text-muted">(optional)</span>
+              <label htmlFor="label" className="t-name block">
+                Name this search{" "}
+                <span className="font-normal text-muted">(optional)</span>
               </label>
               <input
                 id="label"
                 placeholder="Mum"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                className="mt-2 w-full rounded border border-rule-strong bg-transparent px-3 py-2.5 text-[16px]"
+                className="t-body mt-2 w-full rounded-md border border-rule-strong bg-transparent px-3 py-2.5"
               />
-              <p className="mt-1.5 text-[14px] text-muted">
+              <p className="t-meta mt-1.5">
                 So you can tell two searches apart later.
               </p>
             </div>
           </div>
 
           <fieldset className="mt-8">
-            <legend className="text-[15px] font-medium">
-              Anything that matters <span className="text-muted">(optional)</span>
+            <legend className="t-name">
+              Anything that matters{" "}
+              <span className="font-normal text-muted">(optional)</span>
             </legend>
             <div className="mt-3 flex flex-wrap gap-2">
               {MUST_HAVES.map((m) => {
@@ -262,10 +255,10 @@ export default function NewSearch({
                 return (
                   <label
                     key={m}
-                    className={`cursor-pointer rounded-full border px-3 py-1.5 text-[14px] ${
+                    className={`t-body cursor-pointer rounded-full border px-3 py-1.5 ${
                       active
-                        ? "border-rule-strong font-medium"
-                        : "border-rule text-muted"
+                        ? "border-rule-strong bg-sunk font-semibold"
+                        : "border-rule text-muted hover:border-rule-strong"
                     }`}
                   >
                     <input
@@ -285,7 +278,7 @@ export default function NewSearch({
             <button
               type="submit"
               disabled={!zipReady || busy || !ready || matches.length === 0}
-              className="rounded bg-ink px-6 py-3.5 text-[17px] font-semibold text-paper disabled:opacity-60"
+              className="btn btn-primary btn-lg"
             >
               {busy
                 ? "Opening the board…"
@@ -296,7 +289,7 @@ export default function NewSearch({
             <button
               type="button"
               onClick={onCancel}
-              className="text-[16px] underline underline-offset-4"
+              className="link t-body"
             >
               Back
             </button>
@@ -362,11 +355,9 @@ function NearbyPreview({
 }) {
   return (
     <aside className="lg:pt-2">
-      <h2 className="text-[14px] font-medium uppercase tracking-wide text-muted">
-        Facilities we would write to
-      </h2>
+      <h2 className="t-label">Facilities we would write to</h2>
 
-      <div className="mt-4 rounded border border-rule">
+      <div className="card mt-4 overflow-hidden">
         {!zipReady && (
           <div className="p-5">
             <Empty
@@ -404,16 +395,19 @@ function NearbyPreview({
         )}
 
         {result?.facilities.map((f, i) => (
-          <div key={f.ccn} className={`p-4 ${i > 0 ? "border-t border-rule" : ""}`}>
+          <div
+            key={f.ccn}
+            className={`p-4 transition-colors duration-[120ms] hover:bg-sunk ${
+              i > 0 ? "border-t border-rule" : ""
+            }`}
+          >
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[15px] font-medium leading-snug">
-                {f.name}
-              </span>
-              <span className="shrink-0 text-[14px] tabular-nums text-muted">
+              <span className="t-name">{f.name}</span>
+              <span className="t-meta shrink-0">
                 {f.distanceMiles.toFixed(1)} mi
               </span>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px] text-muted">
+            <div className="t-meta mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               <span>
                 {f.city}, {f.state}
               </span>
@@ -424,10 +418,10 @@ function NearbyPreview({
               </span>
               {/* Red is reserved for harm. Both of these are harm. */}
               {f.abuseIcon && (
-                <span className="font-medium text-harm">Abuse citation</span>
+                <span className="font-bold text-harm">Abuse citation</span>
               )}
               {f.specialFocusStatus && (
-                <span className="font-medium text-harm">Special focus</span>
+                <span className="font-bold text-harm">Special focus</span>
               )}
             </div>
           </div>
@@ -435,14 +429,14 @@ function NearbyPreview({
       </div>
 
       {result?.origin?.precision === "zip3" && (
-        <p className="mt-3 text-[14px] leading-snug text-muted">
+        <p className="t-meta mt-3">
           No certified facility sits inside {zip} itself, so distances are
           measured from the centre of the wider {zip.slice(0, 3)} postal area.
         </p>
       )}
 
       {result && result.facilities.length > 0 && (
-        <p className="mt-3 text-[14px] leading-snug text-muted">
+        <p className="t-meta mt-3">
           Every facility in range is listed, including poorly rated ones. Ombuds
           takes no money from facilities, so none of them can pay to appear —
           or to be left out.

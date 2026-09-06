@@ -7,12 +7,12 @@
 - **Repo:** https://github.com/Shyam-Raghuwanshi/Ombuds
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://flexible-reindeer-206.convex.cloud
-- **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
-- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, components
+- **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/geospatial, @convex-dev/workpool
+- **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, file storage, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-06T07:25:54Z
+- **Last updated:** 2026-09-06T19:02:41Z
 
 ## Log
 
@@ -506,3 +506,80 @@ by page — deliberately paginated, since scanning that table is what broke the
 page in the first place — takes the distinct tag-and-severity pairs and fills
 only the gaps. A few thousand calls once, not per citation, because a tag at a
 given severity means the same thing in every facility in the country.
+
+
+### 2026-09-06 - ac75346
+The radius search runs on the geospatial component. Facility positions live in
+an S2 cell index keyed by CCN — already the unique key for a facility everywhere
+else in this codebase, so a point and its row cannot drift apart — and a search
+asks for the nearest N within a distance and gets them back ordered and bounded.
+The handler now reads only the rows it is about to return, where the latitude
+band it replaces read a strip of the country and discarded most of it. Checked
+against the old path before switching: Pomona returns the same three facilities
+at the same distances, and Portland, Chicago and Manhattan all resolve correctly
+(`convex/geo.ts`, `convex/convex.config.ts`). The `by_latitude` index went with
+it — an index nothing reads still costs a write on every one of 14,690 facility
+upserts.
+
+A family can now take the comparison away as a CSV. Choosing a care home is not
+done in one sitting and rarely alone: it happens over weeks, and gets argued
+about with a sibling who has never seen this screen, so a board that only exists
+behind a session is no use in the conversation that actually decides it. The
+file holds every facility, its federal record, and what it told us, sorted worst
+safety record first — a family scanning a spreadsheet reads from the top, and
+the homes that hurt someone are the ones they must not miss. Convex features:
+file storage (`convex/exports.ts`, `src/Board.tsx`).
+
+CSV rather than PDF on purpose: the thing a family does with this is sort it,
+filter it and send it on, and a spreadsheet does all three where a PDF only
+looks more finished. Every column carries its provenance, the file states in its
+own header that a federal finding and a facility's claim are not the same kind
+of fact, and an export taken in demo mode says on its fourth line that the
+replies were written by a seeded persona and that no real facility was emailed —
+so a file forwarded to someone who has never seen the product cannot imply
+otherwise.
+
+
+### 2026-09-06 - working tree
+A family who had already run one search could never get back to the pitch, the
+ZIP-code search, or any search but their newest: the effect that lands a
+returning family on their board re-ran every time the view returned home and put
+them straight back. It now decides where to land once, the moment we first know
+whether this family has a search, and never again — which is what it was always
+meant to mean (`src/App.tsx`).
+
+The product had no font-family declared anywhere, so every screen rendered in
+the browser default. It is now set in Public Sans, the typeface of the US Web
+Design System — the same place #005ea2 came from — with IBM Plex Mono for the
+things that are codes rather than words: F0689, a scope/severity letter, a
+crawled URL. A family should be able to see which part of a sentence they would
+type into a government website (`index.html`, `src/index.css`).
+
+Every size in the product now comes from one eight-step scale defined as tokens
+in `src/index.css`, and no component sets a font size of its own — 203 ad-hoc
+sizes across eleven files are gone. A page that shows a federal harm finding
+beside a facility's own sales claim has to make the difference legible at a
+glance, and it cannot do that if forty components each chose their own emphasis.
+
+Paper moved off pure white to #FBFBFC and sunk to #F1F2F5. Every ratio was
+recomputed rather than assumed: ink 17.40:1, muted 5.74:1, focus 6.50:1, harm
+6.37:1 on paper, white on harm-solid 6.59:1 — all AA or better, and the comments
+beside each token now state the measured values. Dark is unchanged; nothing in
+it failed.
+
+Cards lift off the page with a shadow instead of a second border, and the boxes
+that used to sit inside boxes — the counter grid, the three how-it-works steps,
+the figures beside the headline — are held apart by whitespace now. The rules
+that survived are the ones that separate genuinely different kinds of claim: the
+divider between the federal record and what a facility said about itself is the
+whole product and it stays. Numbers are tabular everywhere they form a column,
+so the live counter no longer shifts sideways as it ticks.
+
+Red is still only harm. The one place it had leaked — a failed CSV download
+reporting itself in the harm colour — now says so in ordinary ink, because a
+file that would not build is not a resident who was hurt (`src/Board.tsx`).
+
+Checked at 375px and 1280px in both themes with the real compiled CSS: no
+horizontal overflow, fonts loading, the title stepping down on small phones, and
+focus rings and 120ms hover transitions on every control, with reduced-motion
+still zeroing them.

@@ -31,9 +31,9 @@ const CONCERN_LABEL: Record<string, string> = {
 
 /** Weight, not colour — see the note above about red. */
 const CONCERN_STYLE: Record<string, string> = {
-  informational: "text-muted",
-  concerning: "font-medium",
-  serious: "font-semibold",
+  informational: "",
+  concerning: "font-semibold text-ink",
+  serious: "font-bold text-ink",
 };
 
 export function NewsPanel({
@@ -47,8 +47,8 @@ export function NewsPanel({
 
   return (
     <section className="mt-8">
-      <h2 className="text-xl font-semibold">Recent local reporting</h2>
-      <p className="mt-1 max-w-3xl text-[16px] text-muted">
+      <h2 className="t-heading">Recent local reporting</h2>
+      <p className="t-body measure mt-2 text-muted">
         Federal inspection results take months to be published. Local news does
         not. This is what the press has reported about this facility in the past
         year.
@@ -69,7 +69,7 @@ export function NewsPanel({
       {news && !error && news.scanned && news.items.length === 0 && (
         // Deliberately distinct from "we have not looked yet". Finding nothing
         // is a real answer and a family should be able to read it as one.
-        <p className="mt-3 max-w-3xl text-[16px]">
+        <p className="t-body measure mt-3">
           We searched local news from the past year and found no coverage of
           this facility.
           {news.scannedAt ? ` Checked ${fmtDate(news.scannedAt)}.` : ""}
@@ -77,9 +77,7 @@ export function NewsPanel({
       )}
 
       {news && !news.scanned && !error && (
-        <p className="mt-3 text-muted">
-          Not searched yet.
-        </p>
+        <p className="t-body mt-3 text-muted">Not searched yet.</p>
       )}
 
       {news && news.items.length > 0 && (
@@ -91,25 +89,21 @@ export function NewsPanel({
                 className="border-t border-rule py-4"
               >
                 <p
-                  className={`text-[14px] uppercase tracking-wide ${
-                    CONCERN_STYLE[item.concernLevel] ?? ""
-                  }`}
+                  className={`t-label ${CONCERN_STYLE[item.concernLevel] ?? ""}`}
                 >
                   {CONCERN_LABEL[item.concernLevel] ?? item.concernLevel}
                 </p>
-                <h3 className="mt-1 text-[17px] font-medium">
+                <h3 className="t-name mt-1.5">
                   <a
                     href={item.url}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="underline underline-offset-4"
+                    className="link"
                   >
                     {item.title}
                   </a>
                 </h3>
-                <p className="mt-1 max-w-3xl text-[16px] leading-relaxed">
-                  {item.whyItMatters}
-                </p>
+                <p className="t-body measure mt-1.5">{item.whyItMatters}</p>
                 <Provenance>
                   Reported by {item.outlet}
                   {item.publishedAt
