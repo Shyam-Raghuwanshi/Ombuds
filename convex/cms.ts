@@ -709,7 +709,7 @@ export const refreshFacilitiesPage = internalAction({
       ccns: string[];
       cursor: string | null;
       isDone: boolean;
-    } = await ctx.runQuery(internal.cms.facilityPage, { cursor, size });
+    } = await ctx.runQuery(internal.cms.watchedFacilityPage, { cursor, size });
 
     let checkedSoFar = checked ?? 0;
     let alertedSoFar = alerted ?? 0;
@@ -741,7 +741,8 @@ export const refreshFacilitiesPage = internalAction({
       });
     } else {
       console.log(
-        `[cms] monthly refresh complete: ${checkedSoFar} facilities re-checked, ` +
+        `[cms] monthly refresh complete: ${checkedSoFar} watched facilities ` +
+          `re-checked, ` +
           `${alertedSoFar} new harm alerts raised`,
       );
     }
@@ -750,7 +751,23 @@ export const refreshFacilitiesPage = internalAction({
   },
 });
 
-export const facilityPage = internalQuery({
+/**
+ * The facilities the monthly refresh should actually re-pull.
+ *
+ * Only the ones a family is watching — every CCN with an inquiry against it.
+ *
+ * This deliberately does NOT page the facilities table. It used to, back when
+ * that table held only the handful of facilities somebody had opened; ingesting
+ * the full provider catalogue turned the same loop into a re-pull of all 14,690
+ * facilities' citation histories, which is the bulk ingest of Health
+ * Deficiencies that CLAUDE.md section 6 rules out — 419,479 rows and ~29,000
+ * CMS round trips for a table that is meant to be loaded lazily, per facility.
+ *
+ * Nothing is lost by narrowing it. `raiseAlerts` only raises an alert on a
+ * search that has a live inquiry for the facility, so re-pulling a facility
+ * nobody is watching cannot produce an alert. It was work with no reader.
+ */
+export const watchedFacilityPage = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), size: v.number() },
   returns: v.object({
     ccns: v.array(v.string()),
@@ -759,10 +776,14 @@ export const facilityPage = internalQuery({
   }),
   handler: async (ctx, { cursor, size }) => {
     const page = await ctx.db
-      .query("facilities")
+      .query("inquiries")
       .paginate({ cursor, numItems: size });
+    // Deduped within the page. The same facility on two families' shortlists
+    // can still be pulled twice across pages, which costs one extra CMS call
+    // and writes the same rows — harmless, and far cheaper than holding every
+    // CCN seen so far in memory to avoid it.
     return {
-      ccns: page.page.map((f) => f.ccn),
+      ccns: [...new Set(page.page.map((i) => i.ccn))],
       cursor: page.continueCursor,
       isDone: page.isDone,
     };

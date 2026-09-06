@@ -1,7 +1,13 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { action, internalMutation, internalQuery, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { generateStructured } from "./ai/provider";
 import {
   DEFICIENCY_TRANSLATION_SYSTEM,
@@ -798,18 +804,41 @@ export const facilityCitations = query({
 
 /** How full the shared translation cache is. Surfaced in the UI as evidence. */
 export const cacheStats = query({
-  args: {},
-  returns: v.object({ cachedMeanings: v.number(), citationsCovered: v.number() }),
-  handler: async (ctx) => {
+  args: { ccns: v.array(v.string()) },
+  returns: v.object({
+    cachedMeanings: v.number(),
+    citationsCovered: v.number(),
+    citationsTotal: v.number(),
+  }),
+  handler: async (ctx, { ccns }) => {
+    // Bounded by construction: 643 federal tags × 12 severity letters is the
+    // hard ceiling on this table, and the realistic figure is nearer 1,500.
     const translations = await ctx.db.query("tagTranslations").collect();
     const keys = new Set(translations.map((t) => cacheKey(t.tag, t.scopeSeverity)));
-    const citations = await ctx.db.query("deficiencies").collect();
-    return {
-      cachedMeanings: keys.size,
-      citationsCovered: citations.filter((c) =>
+
+    // Coverage is measured over the facilities on screen, by index.
+    //
+    // This used to read every citation we hold. That was affordable while the
+    // table only contained the handful of facilities anyone had opened, and
+    // stopped being affordable the moment the full provider catalogue was
+    // ingested and the monthly refresh began pulling citation histories to
+    // match: the query crossed Convex's 32,000-document read limit and took
+    // the front page down with it. Nothing about the claim needs a full scan —
+    // reuse is just as visible over the facilities being compared.
+    let citationsCovered = 0;
+    let citationsTotal = 0;
+    for (const ccn of [...new Set(ccns)]) {
+      const rows = await ctx.db
+        .query("deficiencies")
+        .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
+        .collect();
+      citationsTotal += rows.length;
+      citationsCovered += rows.filter((c) =>
         keys.has(cacheKey(c.tag, c.scopeSeverity)),
-      ).length,
-    };
+      ).length;
+    }
+
+    return { cachedMeanings: keys.size, citationsCovered, citationsTotal };
   },
 });
 
@@ -878,6 +907,158 @@ export const resetTranslationCache = action({
     await ctx.scheduler.runAfter(0, internal.deficiencies.clearTagTranslations, {
       modelPrefix,
       cursor: null,
+    });
+    return { started: true };
+  },
+});
+
+// =============================================================================
+// Pre-warming the cache
+// =============================================================================
+
+/**
+ * The distinct (tag, severity) pairs we hold citations for and have not yet
+ * translated, one page of citations at a time.
+ *
+ * Paginated rather than collected. The whole point of this table is that it is
+ * large — it is the one CMS dataset that must never be loaded in full — and a
+ * query that reads all of it is what took the front page down.
+ */
+export const uncachedPairsPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), size: v.number() },
+  returns: v.object({
+    pairs: v.array(v.object({ tag: v.string(), scopeSeverity: v.string() })),
+    cursor: v.union(v.string(), v.null()),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor, size }) => {
+    const page = await ctx.db
+      .query("deficiencies")
+      .paginate({ cursor, numItems: size });
+
+    const seen = new Set<string>();
+    const pairs: Array<{ tag: string; scopeSeverity: string }> = [];
+    for (const row of page.page) {
+      const scopeSeverity = row.scopeSeverity.toUpperCase();
+      const key = cacheKey(row.tag, scopeSeverity);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const cached = await ctx.db
+        .query("tagTranslations")
+        .withIndex("by_tag_severity", (q) =>
+          q.eq("tag", row.tag).eq("scopeSeverity", scopeSeverity),
+        )
+        .first();
+      if (!cached) pairs.push({ tag: row.tag, scopeSeverity });
+    }
+
+    return { pairs, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * How many translations one run is allowed to make.
+ *
+ * Each is a model call of a few seconds, so this is the number that keeps a run
+ * comfortably inside an action's time limit while still making real progress.
+ */
+const WARM_PER_RUN = 25;
+
+/** Citations scanned per run while looking for untranslated pairs. */
+const WARM_SCAN_PAGE = 2_000;
+
+/**
+ * Translate every meaning we hold a citation for, ahead of anyone reading one.
+ *
+ * Normally translation is lazy — CLAUDE.md section 10 forbids translating during
+ * ingest, because doing it per citation is the difference between a dollar and
+ * five hundred. This is not that. It walks the citations we already hold, takes
+ * the distinct (tag, severity) pairs, and fills only the gaps: a few thousand
+ * calls at most, once, because `F0689 at severity G` means the same thing in
+ * every facility in the country.
+ *
+ * Worth doing before a demo because an empty cache makes the product look like
+ * it has done no work — the front page counts the meanings it holds, and a
+ * freshly cleared cache reads as "2".
+ */
+export const warmTranslationCache = internalAction({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    translated: v.optional(v.number()),
+    budget: v.optional(v.number()),
+  },
+  returns: v.object({ translated: v.number(), done: v.boolean() }),
+  handler: async (
+    ctx,
+    { cursor, translated, budget },
+  ): Promise<{ translated: number; done: boolean }> => {
+    let done = translated ?? 0;
+    const cap = budget ?? 4_000;
+
+    const page: {
+      pairs: Array<{ tag: string; scopeSeverity: string }>;
+      cursor: string | null;
+      isDone: boolean;
+    } = await ctx.runQuery(internal.deficiencies.uncachedPairsPage, {
+      cursor,
+      size: WARM_SCAN_PAGE,
+    });
+
+    const batch = page.pairs.slice(0, WARM_PER_RUN);
+    const descriptions: Record<string, string> = await ctx.runQuery(
+      internal.cms.lookupTagDescriptions,
+      { tags: batch.map((p) => p.tag) },
+    );
+
+    for (const pair of batch) {
+      if (done >= cap) break;
+      try {
+        await ctx.runAction(api.deficiencies.translateDeficiency, {
+          tag: pair.tag,
+          // The catalogue holds the untruncated federal wording; the citation
+          // row's own copy is cut off mid-sentence (section 6, fact 3).
+          tagDescription: descriptions[pair.tag] ?? pair.tag,
+          scopeSeverity: pair.scopeSeverity,
+        });
+        done += 1;
+      } catch (error) {
+        // One tag the model refuses must not stop the sweep.
+        console.error(
+          `[deficiencies] warm failed for ${pair.tag}/${pair.scopeSeverity}: ${error}`,
+        );
+      }
+    }
+
+    // Only advance the cursor once this page has nothing left to translate,
+    // so a page with more than WARM_PER_RUN gaps is revisited rather than
+    // half-done and abandoned.
+    const pageExhausted = page.pairs.length <= WARM_PER_RUN;
+    const nextCursor = pageExhausted ? page.cursor : cursor;
+    const finished = (pageExhausted && page.isDone) || done >= cap;
+
+    if (!finished) {
+      await ctx.scheduler.runAfter(0, internal.deficiencies.warmTranslationCache, {
+        cursor: nextCursor,
+        translated: done,
+        budget: cap,
+      });
+      return { translated: done, done: false };
+    }
+
+    console.log(`[deficiencies] cache warm complete: ${done} meanings translated`);
+    return { translated: done, done: true };
+  },
+});
+
+/** Kick off the warm and return immediately; it chains through the scheduler. */
+export const startCacheWarm = action({
+  args: { budget: v.optional(v.number()) },
+  returns: v.object({ started: v.boolean() }),
+  handler: async (ctx, { budget }): Promise<{ started: boolean }> => {
+    await ctx.scheduler.runAfter(0, internal.deficiencies.warmTranslationCache, {
+      cursor: null,
+      budget,
     });
     return { started: true };
   },

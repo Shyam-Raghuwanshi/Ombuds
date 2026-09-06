@@ -160,15 +160,16 @@ function Column({
 }
 
 /** Evidence that the cache is doing what it claims. */
-function CacheLine() {
-  const stats = useQuery(api.deficiencies.cacheStats, {});
+function CacheLine({ ccns }: { ccns: string[] }) {
+  const stats = useQuery(api.deficiencies.cacheStats, { ccns });
   if (!stats) return null;
   return (
     <p className="mt-2 text-[14px] text-muted">
       {stats.cachedMeanings} distinct meanings translated so far, covering{" "}
-      {stats.citationsCovered} citations on file. A meaning is cached by tag and
-      severity, so it is written once and reused by every facility in the
-      country that was ever cited the same way.
+      {stats.citationsCovered} of the {stats.citationsTotal} citations on these
+      facilities. A meaning is cached by tag and severity, so it is written once
+      and reused by every facility in the country that was ever cited the same
+      way.
     </p>
   );
 }
@@ -257,7 +258,7 @@ export function Compare({
           fact about a nursing home. They belong underneath, as footnotes to
           the thing they describe. */}
       <div className="mt-6 border-t border-rule pt-4">
-        <CacheLine />
+        <CacheLine ccns={ccns} />
         <ReachLine ccns={ccns} />
       </div>
     </section>
