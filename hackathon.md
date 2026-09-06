@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-06T19:02:41Z
+- **Last updated:** 2026-09-06T19:17:32Z
 
 ## Log
 
@@ -583,3 +583,26 @@ Checked at 375px and 1280px in both themes with the real compiled CSS: no
 horizontal overflow, fonts loading, the title stepping down on small phones, and
 focus rings and 120ms hover transitions on every control, with reduced-motion
 still zeroing them.
+
+The logo is in the product, and the tab had no icon at all until now — every
+judge with this open beside eleven other submissions got the blank page glyph.
+Both `logo.svg` and `logo-with-text.svg` were drawn in a hardcoded #111111 on a
+560x160 artboard that was 91% empty. They now carry a tight viewBox and are
+drawn in `currentColor`, so the mark takes the ink of whatever it sits in.
+
+The header mark is inlined as a component rather than loaded through an <img>,
+and the reason is the theme toggle: an image is an isolated document that cannot
+see the `data-theme` attribute, so it can only follow the operating system. A
+reader whose laptop is in light mode but who chose Dark in the header would have
+got a near-black mark on a near-black bar — the one element on the page ignoring
+their choice. Checked all three states: OS light, OS dark, and OS light with
+Dark chosen explicitly (`src/Logo.tsx`, `src/App.tsx`).
+
+The standalone files keep their own prefers-color-scheme rule for the contexts
+that genuinely cannot inherit — the favicon, a README, a social card. Writing
+that rule is what surfaced the bug worth recording: naming the CSS custom
+property in an XML comment put a double hyphen inside it, which is illegal in
+XML, and a browser answers that by silently refusing to draw the file at all.
+The favicon was rendering at zero by zero and nothing said so. Both files are
+now checked for well-formedness, and the colour swap is verified rendering as an
+image in both schemes (`logo.svg`, `logo-with-text.svg`, `index.html`).

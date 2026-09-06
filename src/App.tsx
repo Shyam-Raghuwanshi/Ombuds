@@ -9,6 +9,7 @@ import { Compare } from "./Compare";
 import { FacilityDetail } from "./FacilityDetail";
 import { LicensingCrawl } from "./LicensingCrawl";
 import { ErrorBoundary, ErrorState, Loading, ThemeToggle } from "./ui";
+import { LogoMark } from "./Logo";
 import NewSearch from "./NewSearch";
 
 /**
@@ -333,9 +334,10 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <button
             onClick={goHome}
-            className="t-name rounded px-1 uppercase tracking-[0.16em] hover:text-muted"
+            className="flex items-center gap-2.5 rounded px-1 py-0.5 hover:text-muted"
           >
-            Ombuds
+            <LogoMark className="h-6 w-auto shrink-0" />
+            <span className="t-name uppercase tracking-[0.16em]">Ombuds</span>
             <span className="sr-only"> — back to the start</span>
           </button>
           <ThemeToggle />
