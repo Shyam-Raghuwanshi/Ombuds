@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-06T06:41:22Z
+- **Last updated:** 2026-09-06T07:25:54Z
 
 ## Log
 
@@ -474,3 +474,35 @@ built on submit — five digits and real homes appear, nearest first, before
 anything has been created. It lists every facility in range, one-star and
 special-focus homes included. Filtering those out is precisely what a referral
 service paid by facilities does (`src/NewSearch.tsx`).
+
+
+### 2026-09-06 - 36f0d7c
+The front page stopped drawing, and the cause was three days and two files away
+from the symptom. `deficiencies:cacheStats` — the line under the comparison
+counting how many distinct meanings have been translated — read every citation
+held. That was affordable while the table only contained facilities somebody had
+opened. Ingesting the full provider catalogue changed the arithmetic: the
+monthly refresh pages facilities and pulls a citation history for each, so
+14,690 facilities turned a cheap cron into the bulk load of Health Deficiencies
+that is ruled out on purpose — 419,479 rows and ~29,000 CMS round trips for a
+table meant to be read lazily, one facility at a time. The citations table grew,
+the query crossed Convex's 32,000-document read limit, and the error boundary
+did its job on a screen that had nothing wrong with its data.
+
+Both halves are fixed. Coverage is now counted over the facilities actually on
+screen through the `by_ccn` index, which evidences reuse just as well as a whole
+table did. The refresh walks only facilities a family is watching — every CCN
+with an inquiry against it — and nothing is lost by narrowing it, because
+`raiseAlerts` only ever alerted a search holding a live inquiry for that
+facility, so re-pulling an unwatched one could not have produced an alert
+(`convex/cms.ts`, `convex/deficiencies.ts`). Convex features: indexed queries,
+pagination, crons.
+
+Also adds a cache warm, which exists because of a smaller version of the same
+mistake. Translation is lazy by design, so clearing the cache on the provider
+switch left the front page truthfully reporting two translated meanings and
+looking like a product that had done no work. The warm walks held citations page
+by page — deliberately paginated, since scanning that table is what broke the
+page in the first place — takes the distinct tag-and-severity pairs and fills
+only the gaps. A few thousand calls once, not per citation, because a tag at a
+given severity means the same thing in every facility in the country.
