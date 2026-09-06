@@ -10,9 +10,9 @@
 - **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/workpool
 - **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, components
 - **Auth:** Convex Auth
-- **AI models:** gpt-5-mini, gpt-5 (shipping target); gemini-3.5-flash-lite, gemini-3.5-flash selectable during the build. Chosen by the LLM_PROVIDER env var in `convex/ai/provider.ts`
+- **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-05T20:31:29Z
+- **Last updated:** 2026-09-06T06:41:22Z
 
 ## Log
 
@@ -259,8 +259,8 @@ recovered.
 
 The dev API credential is on a free tier that caps the larger model at 20
 requests a minute, which a six-facility campaign exceeds, so both tiers point at
-the small model during rehearsal via the existing `GEMINI_MODEL_LARGE` override.
-The shipping target in `convex/ai/provider.ts` is unchanged.
+the small model during rehearsal via the existing model-id override. The
+shipping target in `convex/ai/provider.ts` is unchanged.
 
 
 ### 2026-08-29 - 7792f41
@@ -378,7 +378,7 @@ rows and keep the other's — two facilities described in two different register
 is visible on camera (`convex/deficiencies.ts`). Production still runs the
 build-time provider; that remains the next thing to do.
 
-### 2026-09-05 - working tree
+### 2026-09-05 - 8a7a28b
 A comprehension pass over the interface. No backend change: every number below
 was already a live Convex subscription, and this is the same data made legible.
 
@@ -422,3 +422,55 @@ One thing found and not fixed: `rankSearch` in `convex/agentLoop.ts` is a
 complete agent action, with its own tools and thread, that nothing calls. The
 ranking it would produce is a listed use of the model provider and is currently
 invisible in the product.
+
+
+### 2026-09-06 - 7620918
+Production runs on OpenAI. gpt-5-mini and gpt-5, routed per task, and nothing
+else in the tree: the second adapter, its models, its prices and its env
+overrides are gone, and the package is uninstalled. Ten golden deficiency
+translations from the shipping model are kept in `fixtures/` so a future model
+change can be diffed against real output rather than trusted.
+
+The switch was three faults deep, and each was hidden by the one before it. A
+leftover `OPENAI_BASE_URL` pointed every call at a third-party router, and
+`OPENAI_MODEL_SMALL`/`LARGE` carried router-style `openai/gpt-5-mini` names —
+both answered 404, and the real message ("the model does not exist or you do
+not have access to it") only appeared once the stack trace was read past. Then
+the GPT-5 family turned out to reject `temperature` and warn on every call, and
+at default reasoning effort to overrun the twelve-second letter deadline, so
+the family's letter fell back to the canonical one on every run and the agent
+loop lost its round-2 tool call to the reconciliation sweep. Effort is pinned
+low and the deadline is 22s; the personalised letter and the agent's own
+follow-up both came back (`convex/ai/provider.ts`, `convex/email.ts`).
+
+A family can now search their own ZIP code, which is the thing the product
+described from the first day and could not do. The cold open is hardwired to
+twelve facilities in Pomona; the other 14,678 sat in the database with no way
+to reach them. CMS ships coordinates on every facility but publishes nothing
+about where a ZIP is, so rather than take a geocoding dependency for one
+number, each ZIP's centre is averaged from the facilities CMS already places
+inside it — and a ZIP with no certified facility of its own falls back to its
+three-digit postal area, which the screen says plainly instead of quietly
+measuring from somewhere else. The radius query reads a latitude band off a new
+index and refines it with haversine, so a search reads a few hundred rows
+rather than scanning 14,690 (`convex/geo.ts`, `convex/schema.ts`). Convex
+features: indexed range query, pagination, scheduled functions, realtime
+queries.
+
+The half of that which nearly shipped broken was discovery. The cold open's
+twelve facilities were enriched days ago, so an address exists before the
+fan-out ever runs; a family's twelve have never been looked at, and the first
+Chicago test returned twelve facilities, eleven of them flagged for harm, and
+not one conversation — every row marked `no_email_found` and settled. The
+campaign now starts immediately so the board fills at once, Firecrawl runs
+behind it, and a sweep at 45s, 100s and 180s sends to whichever facilities have
+acquired an address since. Three passes because their rate limit means twelve
+facilities do not come back together. On a Portland run the contacted count
+climbed from one to five as discovery reported in, and two facilities answered
+with a real opening and a real monthly figure (`convex/searches.ts`).
+
+The facility list under the ZIP field is a live query rather than a preview
+built on submit — five digits and real homes appear, nearest first, before
+anything has been created. It lists every facility in range, one-star and
+special-focus homes included. Filtering those out is precisely what a referral
+service paid by facilities does (`src/NewSearch.tsx`).
