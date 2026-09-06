@@ -1,5 +1,21 @@
-<svg width="560" height="160" viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="64" cy="80" r="34" fill="none" stroke="#111111" stroke-width="6"/>
-  <circle cx="96" cy="80" r="34" fill="none" stroke="#111111" stroke-width="6"/>
-  <circle cx="80" cy="80" r="10" fill="#111111"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 40 112 80" width="112" height="80" role="img" aria-label="Ombuds">
+  <!--
+    The Ombuds mark: two overlapping records with one finding at the centre of
+    both. It is drawn in `currentColor`, so wherever this file is inlined into a
+    page it takes the ink of the text around it and follows the theme for free.
+
+    The rule below is the fallback for the contexts where there is no
+    surrounding text to inherit from — a favicon, an <img>, a README. Those
+    cannot see the app's light/dark toggle, so they follow the operating system
+    instead. The two values are the product's own ink tokens.
+  -->
+  <style>
+    svg { color: #14171a; }
+    @media (prefers-color-scheme: dark) { svg { color: #e8ebee; } }
+  </style>
+  <g fill="none" stroke="currentColor" stroke-width="6">
+    <circle cx="64" cy="80" r="34"/>
+    <circle cx="96" cy="80" r="34"/>
+  </g>
+  <circle cx="80" cy="80" r="10" fill="currentColor"/>
 </svg>

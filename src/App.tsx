@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
@@ -9,6 +9,7 @@ import { Compare } from "./Compare";
 import { FacilityDetail } from "./FacilityDetail";
 import { LicensingCrawl } from "./LicensingCrawl";
 import { ErrorBoundary, ErrorState, Loading, ThemeToggle } from "./ui";
+import { LogoMark } from "./Logo";
 import NewSearch from "./NewSearch";
 
 /**
@@ -91,7 +92,7 @@ function ColdOpen({
   return (
     <section className="mx-auto grid max-w-7xl gap-12 px-6 py-16 sm:py-20 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16">
       <div className="max-w-3xl">
-      <h1 className="text-[30px] font-semibold leading-tight sm:text-[38px]">
+      <h1 className="t-title">
         The service most families use to find a nursing home is paid{" "}
         {/* Each figure is unbreakable; the range may wrap at the dash. Holding
             the whole thing on one line overflows a 390px phone, and families
@@ -100,7 +101,7 @@ function ColdOpen({
         <span className="whitespace-nowrap">$15,000</span> by the facility it
         sends you to.
       </h1>
-      <p className="mt-5 max-w-2xl text-[18px] leading-relaxed">
+      <p className="t-lede measure mt-5">
         Roughly one month's rent, paid by the home, for a referral the family
         believes is free advice. Ombuds takes no money from facilities. It reads
         the federal inspection record — every failure, every fine — and then it
@@ -111,12 +112,12 @@ function ColdOpen({
       <button
         onClick={start}
         disabled={busy || !ready}
-        className="mt-8 w-full rounded bg-ink px-6 py-4 text-[18px] font-semibold text-paper disabled:opacity-60 sm:w-auto"
+        className="btn btn-primary btn-lg mt-8 w-full sm:w-auto"
       >
         {busy ? "Opening the board…" : "See a real search"}
       </button>
 
-      <p className="mt-3 text-[16px] text-muted">
+      <p className="t-body measure mt-3 text-muted">
         Twelve real Medicare-certified facilities near Pomona, California, with
         their real inspection records. No sign-up, no email address, no form.
       </p>
@@ -125,11 +126,8 @@ function ColdOpen({
           a parent and a town of their own needs the other door, and it has to
           be visible without scrolling — a family in a hospital waiting room
           should not have to work out that the demo is not the product. */}
-      <p className="mt-6 text-[17px]">
-        <button
-          onClick={onSearchOwn}
-          className="font-semibold underline underline-offset-4"
-        >
+      <p className="t-body mt-6">
+        <button onClick={onSearchOwn} className="link font-bold">
           Or search your own ZIP code
         </button>{" "}
         <span className="text-muted">
@@ -191,21 +189,14 @@ function Scale() {
 
   return (
     <aside className="lg:pt-2">
-      <h2 className="text-[14px] font-medium uppercase tracking-wide text-muted">
-        What Ombuds reads
-      </h2>
-      <dl className="mt-4 rounded border border-rule">
-        {figures.map((figure, i) => (
-          <div
-            key={figure.value}
-            className={`p-5 ${i > 0 ? "border-t border-rule" : ""}`}
-          >
-            <dt className="text-[30px] font-semibold leading-none tabular-nums">
-              {figure.value}
-            </dt>
-            <dd className="mt-2 text-[16px] leading-snug text-muted">
-              {figure.label}
-            </dd>
+      <h2 className="t-label">What Ombuds reads</h2>
+      {/* One card, three figures, separated by whitespace. The hairline that
+          used to run between them made three boxes out of one list. */}
+      <dl className="card mt-4">
+        {figures.map((figure) => (
+          <div key={figure.value} className="p-5">
+            <dt className="t-figure">{figure.value}</dt>
+            <dd className="t-body mt-2 text-muted">{figure.label}</dd>
           </div>
         ))}
       </dl>
@@ -224,7 +215,7 @@ function Thesis() {
   return (
     <section className="border-y border-rule bg-sunk">
       <div className="mx-auto max-w-7xl px-6 py-10">
-        <p className="max-w-4xl text-[22px] font-medium leading-snug sm:text-[26px]">
+        <p className="t-heading max-w-4xl">
           Public records tell you whether a facility is{" "}
           <span className="underline decoration-rule-strong underline-offset-4">
             safe
@@ -235,7 +226,7 @@ function Thesis() {
           </span>
           .
         </p>
-        <p className="mt-3 max-w-3xl text-[18px] leading-relaxed text-muted">
+        <p className="t-lede measure mt-3 text-muted">
           Ombuds does both, and takes no money from facilities.
         </p>
       </div>
@@ -281,20 +272,17 @@ const STEPS = [
 function HowItWorks() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-12">
-      <h2 className="text-[16px] font-medium uppercase tracking-wide text-muted">
-        How it works
-      </h2>
-      <ol className="mt-5 grid gap-px overflow-hidden rounded border border-rule bg-rule sm:grid-cols-3">
+      <h2 className="t-label">How it works</h2>
+      {/* Three columns held apart by space rather than by a one-pixel grid.
+          The rules were doing nothing the gap does not do, and they turned
+          three steps into three boxes. */}
+      <ol className="mt-5 grid gap-8 sm:grid-cols-3 sm:gap-10">
         {STEPS.map((step) => (
-          <li key={step.n} className="flex flex-col bg-paper p-5">
-            <span className="text-[14px] font-semibold tabular-nums text-muted">
-              {step.n}
-            </span>
-            <h3 className="mt-1 text-[18px] font-semibold leading-snug">
-              {step.title}
-            </h3>
-            <p className="mt-2 text-[16px] leading-relaxed">{step.body}</p>
-            <p className="mt-auto pt-4 text-[14px] text-muted">{step.source}</p>
+          <li key={step.n} className="flex flex-col">
+            <span className="t-label">Step {step.n}</span>
+            <h3 className="t-name mt-2">{step.title}</h3>
+            <p className="t-body measure mt-2">{step.body}</p>
+            <p className="t-meta mt-auto pt-4">{step.source}</p>
           </li>
         ))}
       </ol>
@@ -315,12 +303,24 @@ export default function App() {
 
   // A family who has already run a search lands back on their board rather
   // than on the pitch.
+  //
+  // This is a decision about where to *land*, so it is made once, the moment we
+  // first know whether this family has a search — and never again. Re-running it
+  // whenever the view returns to "home" is what made the header button dead: it
+  // set the view to home and this effect put it straight back, so a family who
+  // had run one search could never reach the pitch, the ZIP-code search, or any
+  // search but their newest. Note the ref is set even when we do not redirect,
+  // because the case that matters is a family who arrives with no search, starts
+  // one, and then asks to go home.
   const searches = useQuery(api.searches.mySearches, isAuthenticated ? {} : "skip");
+  const landed = useRef(false);
   useEffect(() => {
-    if (view.name === "home" && searches && searches.length > 0) {
+    if (landed.current || !searches) return;
+    landed.current = true;
+    if (searches.length > 0) {
       setView({ name: "board", searchId: searches[0].searchId });
     }
-  }, [searches, view.name]);
+  }, [searches]);
 
   const goHome = () => setView({ name: "home" });
 
@@ -334,9 +334,10 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <button
             onClick={goHome}
-            className="text-[15px] font-semibold uppercase tracking-widest"
+            className="flex items-center gap-2.5 rounded px-1 py-0.5 hover:text-muted"
           >
-            Ombuds
+            <LogoMark className="h-6 w-auto shrink-0" />
+            <span className="t-name uppercase tracking-[0.16em]">Ombuds</span>
             <span className="sr-only"> — back to the start</span>
           </button>
           <ThemeToggle />
@@ -415,7 +416,7 @@ export default function App() {
 
       <footer className="mt-16 border-t border-rule">
         <div className="mx-auto max-w-7xl px-6 py-8">
-          <p className="max-w-3xl text-[16px] leading-relaxed text-muted">
+          <p className="t-body measure text-muted">
             Inspection data is the public federal record from the CMS Provider
             Data Catalog. Plain-English explanations are generated from that
             record and labelled with the model that wrote them. Answers about

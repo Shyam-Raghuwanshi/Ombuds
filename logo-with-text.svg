@@ -1,6 +1,23 @@
-<svg width="560" height="160" viewBox="0 0 560 160" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="64" cy="80" r="34" fill="none" stroke="#111111" stroke-width="6"/>
-  <circle cx="96" cy="80" r="34" fill="none" stroke="#111111" stroke-width="6"/>
-  <circle cx="80" cy="80" r="10" fill="#111111"/>
-  <text x="192" y="103" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="600" font-size="66" letter-spacing="-1.5" fill="#111111">Ombuds</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 40 456 80" width="456" height="80" role="img" aria-label="Ombuds">
+  <!--
+    The mark with the wordmark beside it. Same colour contract as logo.svg:
+    `currentColor` when inlined, the operating system's preference otherwise.
+
+    Public Sans first in the stack — the typeface of the US Web Design System,
+    which is what the rest of the product is set in. A standalone SVG cannot
+    fetch a webfont when it is used as an <img>, so the fallbacks are real and
+    the viewBox is cut wide enough that a broader substitute face does not clip.
+  -->
+  <style>
+    svg { color: #14171a; }
+    @media (prefers-color-scheme: dark) { svg { color: #e8ebee; } }
+  </style>
+  <g fill="none" stroke="currentColor" stroke-width="6">
+    <circle cx="64" cy="80" r="34"/>
+    <circle cx="96" cy="80" r="34"/>
+  </g>
+  <circle cx="80" cy="80" r="10" fill="currentColor"/>
+  <text x="192" y="103"
+        font-family="'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="700" font-size="66" letter-spacing="-1.5" fill="currentColor">Ombuds</text>
 </svg>

@@ -26,6 +26,29 @@
  * WCAG AA or better; the ratios are recorded beside each token.
  * ========================================================================== */
 
+/* -----------------------------------------------------------------------------
+ * Typeface
+ *
+ * Public Sans is the typeface of the US Web Design System, which is also where
+ * #005ea2 comes from. That is the whole argument for it: this product is a
+ * reading surface for federal records, and it should look like one. It is a
+ * plain grotesque with a tall x-height and unambiguous figures, drawn for
+ * government forms rather than for a landing page.
+ *
+ * IBM Plex Mono carries the things that are codes rather than words — F0689, a
+ * scope/severity letter, a CCN. A family should be able to see at a glance
+ * which parts of a sentence they are expected to read and which parts they are
+ * expected to copy into a government website.
+ *
+ * Both are loaded from Google Fonts in index.html with a real fallback stack
+ * behind them, so a blocked font request costs a family nothing but the shape
+ * of the letters.
+ * -------------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 @theme inline {
   --color-paper: var(--paper);
   --color-sunk: var(--sunk);
@@ -47,18 +70,36 @@
 :root {
   color-scheme: light;
 
-  --paper: #ffffff;
-  --sunk: #f4f5f7;
-  --ink: #14171a;         /* 17.99:1 on paper */
-  --muted: #5b6570;       /*  5.93:1 on paper, 5.44:1 on sunk */
+  /* Off-white rather than #ffffff. Pure white is the one surface a screen
+     cannot render without glare, and every card on this page sits on it for
+     several minutes at a time. The step down is small enough that no ratio
+     below moves by more than 0.15. */
+  --paper: #fbfbfc;
+  --sunk: #f1f2f5;
+  --ink: #14171a;         /* 17.40:1 on paper, 16.07:1 on sunk */
+  --muted: #5b6570;       /*  5.74:1 on paper,  5.30:1 on sunk */
   --rule: #d8dce1;        /* decorative dividers only */
-  --rule-strong: #7d868f; /*  3.70:1 — the boundary of an interactive control */
-  --focus: #005ea2;       /*  6.72:1 on paper, 6.16:1 on sunk */
+  --rule-strong: #7d868f; /*  3.58:1 on paper — the boundary of an interactive
+                             control, and AA for non-text UI at 3:1 */
+  --focus: #005ea2;       /*  6.50:1 on paper,  6.01:1 on sunk */
 
-  --harm: #b3241c;        /*  6.59:1 on paper, 5.93:1 on harm-soft */
+  --harm: #b3241c;        /*  6.37:1 on paper,  5.93:1 on harm-soft */
   --harm-solid: #b3241c;  /*  white on it: 6.59:1 */
   --harm-soft: #fdf0ef;
   --harm-edge: #7a1410;
+
+  /* Elevation. A card lifts off the page with a shadow rather than with
+     another border, because a bordered box inside a bordered box is the single
+     thing that makes a page look like it was built in 1998. The hairline is
+     effectively invisible in light mode and does the whole job in dark, where
+     a shadow has nothing to fall on. */
+  --lift: 0 1px 2px rgba(20, 23, 26, 0.05), 0 8px 24px -12px rgba(20, 23, 26, 0.18);
+  --lift-hover: 0 1px 2px rgba(20, 23, 26, 0.07), 0 14px 32px -14px rgba(20, 23, 26, 0.24);
+  --card-edge: rgba(20, 23, 26, 0.06);
+
+  /* The tint a row takes on hover. Ink at 3% — not a new colour, just less of
+     an existing one, so it cannot drift away from the palette. */
+  --hover-wash: rgba(20, 23, 26, 0.035);
 }
 
 /* Dark by system preference — unless the reader has explicitly chosen light. */
@@ -68,16 +109,21 @@
 
     --paper: #101315;
     --sunk: #171b1e;
-    --ink: #e8ebee;         /* 15.59:1 on paper */
-    --muted: #9aa4ad;       /*  7.36:1 on paper, 6.84:1 on sunk */
+    --ink: #e8ebee;         /* 15.59:1 on paper, 14.48:1 on sunk */
+    --muted: #9aa4ad;       /*  7.36:1 on paper,  6.84:1 on sunk */
     --rule: #2b3236;
     --rule-strong: #606a72; /*  3.38:1 */
-    --focus: #7cc4ff;       /*  9.94:1 on paper */
+    --focus: #7cc4ff;       /*  9.94:1 on paper,  9.24:1 on sunk */
 
-    --harm: #ff8a80;        /*  8.17:1 on paper, 7.71:1 on harm-soft */
+    --harm: #ff8a80;        /*  8.17:1 on paper,  7.71:1 on harm-soft */
     --harm-solid: #b3241c;  /*  white on it: 6.59:1 */
     --harm-soft: #2a1210;
     --harm-edge: #ff8a80;
+
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 26px -14px rgba(0, 0, 0, 0.75);
+    --lift-hover: 0 1px 2px rgba(0, 0, 0, 0.55), 0 16px 34px -16px rgba(0, 0, 0, 0.85);
+    --card-edge: #242b30;
+    --hover-wash: rgba(232, 235, 238, 0.045);
   }
 }
 
@@ -97,12 +143,90 @@
   --harm-solid: #b3241c;
   --harm-soft: #2a1210;
   --harm-edge: #ff8a80;
+
+  --lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 26px -14px rgba(0, 0, 0, 0.75);
+  --lift-hover: 0 1px 2px rgba(0, 0, 0, 0.55), 0 16px 34px -16px rgba(0, 0, 0, 0.85);
+  --card-edge: #242b30;
+  --hover-wash: rgba(232, 235, 238, 0.045);
+}
+
+/* -----------------------------------------------------------------------------
+ * The type scale
+ *
+ * Eight steps and no ninth. Every piece of text in this product is one of
+ * these; nothing sets a font size of its own. That is not neatness for its own
+ * sake — a page that shows a federal harm finding beside a facility's own sales
+ * claim has to make the difference between them legible at a glance, and it
+ * cannot do that if forty components each chose their own emphasis.
+ *
+ * The six named in the brief:
+ *
+ *   title     34px / 800 / -0.022em / 1.05   the one thing a page is about
+ *   heading   21px / 700 / -0.015em / 1.16   a section of it
+ *   name      15px / 700 / -0.010em / 1.25   a facility, a correspondent
+ *   body      15px / 400 /       0  / 1.55   sentences
+ *   meta      13px / 400 /       0  / 1.40   dates, provenance, counts — muted
+ *   label     11px / 500 / +0.100em / 1.30   uppercase mono column headings
+ *
+ * And two the product cannot be built without:
+ *
+ *   lede      17px   the single paragraph under a title that says what this is
+ *   figure    28px   a number standing alone — the live counter, 14,690, $0
+ *
+ * Public Sans has a tall x-height, so 15px here sets about the same apparent
+ * size as 16px of a browser default face. NOTE FOR REVIEW: CLAUDE.md section 8
+ * asks for a 16px minimum body and the brief for this pass specifies 15px.
+ * Body is a single token — raising --t-body-size to 16px moves every sentence
+ * in the product and nothing else.
+ * -------------------------------------------------------------------------- */
+:root {
+  --t-title-size: 34px;
+  --t-title-size-sm: 27px; /* below 400px, where 34px puts four words on a line */
+  --t-title-weight: 800;
+  --t-title-tracking: -0.022em;
+  --t-title-leading: 1.05;
+
+  --t-heading-size: 21px;
+  --t-heading-weight: 700;
+  --t-heading-tracking: -0.015em;
+  --t-heading-leading: 1.16;
+
+  --t-name-size: 15px;
+  --t-name-weight: 700;
+  --t-name-tracking: -0.01em;
+  --t-name-leading: 1.25;
+
+  --t-body-size: 15px;
+  --t-body-weight: 400;
+  --t-body-tracking: 0;
+  --t-body-leading: 1.55;
+
+  --t-meta-size: 13px;
+  --t-meta-weight: 400;
+  --t-meta-tracking: 0;
+  --t-meta-leading: 1.4;
+
+  --t-label-size: 11px;
+  --t-label-weight: 500;
+  --t-label-tracking: 0.1em;
+  --t-label-leading: 1.3;
+
+  --t-lede-size: 17px;
+  --t-lede-weight: 400;
+  --t-lede-tracking: -0.006em;
+  --t-lede-leading: 1.5;
+
+  --t-figure-size: 28px;
+  --t-figure-weight: 700;
+  --t-figure-tracking: -0.02em;
+  --t-figure-leading: 1;
 }
 
 @layer base {
   html {
     /* A family reads this on a hospital phone with one thumb. */
     -webkit-text-size-adjust: 100%;
+    font-family: var(--font-sans);
   }
 
   body {
@@ -111,9 +235,11 @@
     /* Contact addresses and crawled URLs are long and unbreakable. Without
        this one of them silently widens the whole page on a phone. */
     overflow-wrap: break-word;
-    font-size: 16px; /* The floor, not the default. This audience is 45-65. */
-    line-height: 1.5;
+    font-family: var(--font-sans);
+    font-size: var(--t-body-size);
+    line-height: var(--t-body-leading);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Focus is a safety feature on a page about safety. Three pixels, high
@@ -131,6 +257,38 @@
      the red and effectively disappear. White is 6.59:1 on it. */
   .surface-harm :focus-visible {
     outline-color: #ffffff;
+  }
+
+  /* One duration for the whole product. Long enough to read as a response,
+     short enough that a reader moving down a list of twelve facilities never
+     waits for the page to catch up. */
+  a,
+  button,
+  summary,
+  select,
+  input,
+  label,
+  [role="button"] {
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  /* A native <select> paints its dropdown from the control's own computed
+     background. A transparent control therefore drops the popup back to the
+     browser's default white while the options still inherit `--ink`, which in
+     dark mode is near-white text on white — the radius picker was unreadable.
+     Both surfaces are stated here so the popup follows the theme token rather
+     than the platform. */
+  select {
+    background-color: var(--paper);
+    color: var(--ink);
+  }
+  select option {
+    background-color: var(--paper);
+    color: var(--ink);
   }
 
   ::selection {
@@ -152,12 +310,200 @@
 }
 
 @layer components {
-  /* The skip link: visually hidden until focused, then the first thing on the
-     page — which is the whole point of it.
+  /* ---------------------------------------------------------------------
+   * The scale, as classes. One per step, and nothing else sets a size.
+   * ------------------------------------------------------------------ */
 
-     Clipped rather than pushed off-screen. A `left: -9999px` box still counts
-     toward the document's scroll width, which hands a phone a horizontal
-     scrollbar pointing at nothing. */
+  .t-title {
+    font-size: var(--t-title-size);
+    font-weight: var(--t-title-weight);
+    letter-spacing: var(--t-title-tracking);
+    line-height: var(--t-title-leading);
+    /* A headline broken 9/9/1 reads as a mistake. */
+    text-wrap: balance;
+  }
+  @media (max-width: 400px) {
+    .t-title {
+      font-size: var(--t-title-size-sm);
+    }
+  }
+
+  .t-heading {
+    font-size: var(--t-heading-size);
+    font-weight: var(--t-heading-weight);
+    letter-spacing: var(--t-heading-tracking);
+    line-height: var(--t-heading-leading);
+    text-wrap: balance;
+  }
+
+  .t-name {
+    font-size: var(--t-name-size);
+    font-weight: var(--t-name-weight);
+    letter-spacing: var(--t-name-tracking);
+    line-height: var(--t-name-leading);
+  }
+
+  .t-body {
+    font-size: var(--t-body-size);
+    font-weight: var(--t-body-weight);
+    letter-spacing: var(--t-body-tracking);
+    line-height: var(--t-body-leading);
+  }
+
+  .t-lede {
+    font-size: var(--t-lede-size);
+    font-weight: var(--t-lede-weight);
+    letter-spacing: var(--t-lede-tracking);
+    line-height: var(--t-lede-leading);
+    text-wrap: pretty;
+  }
+
+  /* Dates and provenance. Muted by definition — a meta line saying which
+     inspection a figure came from must never compete with the figure. Tabular
+     because almost every one of them ends in a date. */
+  .t-meta {
+    font-size: var(--t-meta-size);
+    font-weight: var(--t-meta-weight);
+    letter-spacing: var(--t-meta-tracking);
+    line-height: var(--t-meta-leading);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Column headings. Mono and uppercase because they name a kind of
+     information rather than saying anything — "SAFETY · THE FEDERAL INSPECTION
+     RECORD" is a label on a filing cabinet, not a sentence. */
+  .t-label {
+    font-family: var(--font-mono);
+    font-size: var(--t-label-size);
+    font-weight: var(--t-label-weight);
+    letter-spacing: var(--t-label-tracking);
+    line-height: var(--t-label-leading);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* A number standing on its own. Always tabular: the live counter changes
+     under the reader's eyes and digits that shift sideways as they tick read
+     as a glitch. */
+  .t-figure {
+    font-size: var(--t-figure-size);
+    font-weight: var(--t-figure-weight);
+    letter-spacing: var(--t-figure-tracking);
+    line-height: var(--t-figure-leading);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A federal code — F0689, a scope/severity letter, a CCN. Not prose, and it
+     should not look like prose. Mono, tabular, and very slightly tightened so
+     it does not out-shout the sentence around it. */
+  .t-code {
+    font-family: var(--font-mono);
+    font-size: 0.94em;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+
+  /* ---------------------------------------------------------------------
+   * Measure
+   * ------------------------------------------------------------------ */
+
+  /* Running prose stops at about 65 characters. Past that the eye loses the
+     start of the next line, which is a bad thing to do to someone reading an
+     account of how a resident was hurt. */
+  .measure {
+    max-width: 65ch;
+  }
+
+  /* ---------------------------------------------------------------------
+   * Surfaces
+   * ------------------------------------------------------------------ */
+
+  /* A card lifts with a shadow. The hairline is there for dark mode, where a
+     shadow falls on nothing and the edge is the only thing separating a card
+     from the page behind it. */
+  .card {
+    background-color: var(--paper);
+    border: 1px solid var(--card-edge);
+    border-radius: 8px;
+    box-shadow: var(--lift);
+  }
+
+  /* A row a reader is about to click into. The lift is the whole feedback —
+     no colour change, because every colour on this page means something. */
+  .row-card:hover {
+    box-shadow: var(--lift-hover);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Controls
+   * ------------------------------------------------------------------ */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 6px;
+    font-size: var(--t-body-size);
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.625rem 1rem;
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  /* The one filled control on any screen: the thing we want pressed. */
+  .btn-primary {
+    background-color: var(--ink);
+    color: var(--paper);
+    border: 1px solid var(--ink);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: var(--lift-hover);
+  }
+
+  /* Everything else. An outline, because a second filled button on a screen is
+     a second thing shouting. */
+  .btn-quiet {
+    background-color: transparent;
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+  }
+  .btn-quiet:hover:not(:disabled) {
+    background-color: var(--hover-wash);
+  }
+
+  /* The primary call to action, which is a decision rather than a control —
+     "See a real search" is the whole cold open and it gets the lede size. */
+  .btn-lg {
+    font-size: var(--t-lede-size);
+    padding: 0.9rem 1.5rem;
+    border-radius: 6px;
+  }
+
+  /* A link inside a sentence. Underlined always — colour alone is never the
+     only signal, and in this product the accent blue has to keep meaning
+     "focus" rather than "link". */
+  .link {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+  }
+  .link:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  /* ---------------------------------------------------------------------
+   * The skip link: visually hidden until focused, then the first thing on the
+   * page — which is the whole point of it.
+   *
+   * Clipped rather than pushed off-screen. A `left: -9999px` box still counts
+   * toward the document's scroll width, which hands a phone a horizontal
+   * scrollbar pointing at nothing.
+   * ------------------------------------------------------------------ */
   .skip-link {
     position: absolute;
     top: 0;

@@ -36,9 +36,7 @@ import {
 
 function ColumnLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 text-[14px] font-medium uppercase tracking-wide text-muted sm:hidden">
-      {children}
-    </p>
+    <p className="t-label mb-2 sm:hidden">{children}</p>
   );
 }
 
@@ -53,15 +51,11 @@ function Counter({
   harm?: boolean;
 }) {
   return (
-    <div className="bg-paper px-4 py-3">
-      <div
-        className={`text-[30px] font-semibold leading-none tabular-nums ${
-          harm && value > 0 ? "text-harm" : ""
-        }`}
-      >
+    <div>
+      <div className={`t-figure ${harm && value > 0 ? "text-harm" : ""}`}>
         {value}
       </div>
-      <div className="mt-1.5 text-[14px] leading-snug text-muted">{label}</div>
+      <div className="t-label mt-2">{label}</div>
     </div>
   );
 }
@@ -106,12 +100,11 @@ function CampaignProgress({
   return (
     <div className="mt-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="text-[16px]">
-          <span className="font-semibold tabular-nums">{replied}</span> of the{" "}
-          <span className="tabular-nums">{reachable}</span> facilities we can
-          write to {replied === 1 ? "has" : "have"} answered
+        <p className="t-body tabular-nums">
+          <span className="font-bold">{replied}</span> of the {reachable}{" "}
+          facilities we can write to {replied === 1 ? "has" : "have"} answered
         </p>
-        <p className="text-[14px] text-muted">
+        <p className="t-meta">
           {outstanding > 0
             ? `${outstanding} still to answer — replies land here as they arrive, nothing to refresh`
             : reachable > 0
@@ -133,7 +126,7 @@ function CampaignProgress({
         />
       </div>
       {unreachable > 0 && (
-        <p className="mt-2 text-[14px] text-muted">
+        <p className="t-meta measure mt-2">
           {unreachable}{" "}
           {unreachable === 1 ? "facility publishes" : "facilities publish"} no
           email address anywhere on the open web.{" "}
@@ -158,15 +151,15 @@ function Safety({
     <div className="min-w-0">
       <ColumnLabel>Safety · the federal inspection record</ColumnLabel>
 
-      <h3 className="text-[18px] font-semibold leading-snug">
+      <h3 className="t-name">
         <button
           onClick={() => onOpenFacility(row.ccn)}
-          className="text-left underline underline-offset-4"
+          className="link text-left"
         >
           {facilityName(row.facilityName)}
         </button>
       </h3>
-      <p className="mt-1 text-[16px] text-muted">
+      <p className="t-meta mt-1">
         {row.city}, {row.state}
         {row.overallRating > 0
           ? ` · ${row.overallRating} of 5 stars, CMS overall`
@@ -175,30 +168,30 @@ function Safety({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {row.immediateJeopardy > 0 && (
-          <span className="surface-harm rounded border border-harm-edge bg-harm-solid px-2 py-0.5 text-[14px] font-semibold text-on-harm">
+          <span className="surface-harm t-meta rounded border border-harm-edge bg-harm-solid px-2 py-0.5 font-bold text-on-harm">
             {row.immediateJeopardy} immediate jeopardy
           </span>
         )}
         {row.actualHarm > 0 && (
-          <span className="rounded border border-harm-edge bg-harm-soft px-2 py-0.5 text-[14px] font-medium text-harm">
+          <span className="t-meta rounded border border-harm-edge bg-harm-soft px-2 py-0.5 font-semibold text-harm">
             {row.actualHarm} finding{row.actualHarm === 1 ? "" : "s"} that
             harmed a resident
           </span>
         )}
         {row.abuseIcon && (
-          <span className="rounded border border-harm-edge px-2 py-0.5 text-[14px] font-medium text-harm">
+          <span className="t-meta rounded border border-harm-edge px-2 py-0.5 font-semibold text-harm">
             CMS abuse flag
           </span>
         )}
         {!flagged && !row.abuseIcon && (
-          <span className="rounded border border-rule px-2 py-0.5 text-[14px] text-muted">
+          <span className="t-meta rounded border border-rule px-2 py-0.5">
             No harm on record
           </span>
         )}
       </div>
 
-      <p className="mt-2 text-[14px] text-muted">
-        <span className="font-medium">Federal record</span> ·{" "}
+      <p className="t-meta mt-2">
+        <span className="font-semibold">Federal record</span> ·{" "}
         {row.latestSurveyDate
           ? `inspected ${fmtDate(row.latestSurveyDate)}`
           : "CMS Provider Data Catalog"}
@@ -217,26 +210,23 @@ function Availability({ row }: { row: BoardRow }) {
     return (
       <div className="min-w-0">
         <ColumnLabel>Availability · what the facility told us</ColumnLabel>
-        <p className="text-[16px] text-muted">{waitingLabel(row)}</p>
+        <p className="t-body text-muted">{waitingLabel(row)}</p>
 
         {/* A facility with no address, or one whose address bounced, is not a
             dead end — the federal record still carries a telephone number, and
             that is the thing a family can act on. It leads, rather than
             trailing a repetition of the bad news. */}
         {(row.noEmailFound || row.status === "bounced") && row.phone && (
-          <p className="mt-2 text-[16px]">
+          <p className="t-body mt-2">
             Call{" "}
-            <a
-              className="font-medium underline underline-offset-4"
-              href={`tel:${row.phone}`}
-            >
+            <a className="link font-semibold tabular-nums" href={`tel:${row.phone}`}>
               {row.phone}
             </a>
             <span className="text-muted"> — from the federal record</span>
           </p>
         )}
         {row.status === "clarifying" && row.unansweredLabels.length > 0 && (
-          <p className="mt-2 text-[16px]">
+          <p className="t-body mt-2">
             Following up on {row.unansweredLabels.join(", ").toLowerCase()}
           </p>
         )}
@@ -260,11 +250,9 @@ function Availability({ row }: { row: BoardRow }) {
     <div className="min-w-0">
       <ColumnLabel>Availability · what the facility told us</ColumnLabel>
 
-      <p className="text-[18px] font-semibold leading-snug">
-        {headline || "Replied"}
-      </p>
+      <p className="t-name tabular-nums">{headline || "Replied"}</p>
 
-      <ul className="mt-2 space-y-1 text-[16px]">
+      <ul className="t-body mt-2 space-y-1 tabular-nums">
         {waitlist && <li>{waitlist}</li>}
         {row.staffRatioNights && (
           <li>
@@ -286,7 +274,7 @@ function Availability({ row }: { row: BoardRow }) {
       </ul>
 
       {row.unansweredLabels.length > 0 && (
-        <p className="mt-2 text-[16px] text-muted">
+        <p className="t-body mt-2 text-muted">
           Still unanswered: {row.unansweredLabels.join(", ").toLowerCase()}
         </p>
       )}
@@ -295,14 +283,14 @@ function Availability({ row }: { row: BoardRow }) {
           marked it, the row says so in words rather than in a timestamp a
           reader has to do arithmetic on. */}
       {row.stale && (
-        <p className="mt-3 rounded border-l-4 border-rule-strong bg-sunk px-3 py-2 text-[16px]">
+        <p className="t-body mt-3 rounded-r border-l-4 border-rule-strong bg-sunk px-3 py-2">
           This was true {answerAge(row)}. Openings and waitlists move — worth
           asking again.
         </p>
       )}
 
-      <p className="mt-2 text-[14px] text-muted">
-        <span className="font-medium">Reported by the facility</span>
+      <p className="t-meta mt-2">
+        <span className="font-semibold">Reported by the facility</span>
         {row.lastInboundAt ? ` · ${fmtTime(row.lastInboundAt)}` : ""}
         {row.rounds > 1 ? ` · after ${row.rounds} rounds` : ""}
         {lowConfidence(row.confidence) ? " · answer was vague" : ""}
@@ -325,7 +313,7 @@ function Availability({ row }: { row: BoardRow }) {
 function Rounds({ row }: { row: BoardRow }) {
   if (row.rounds < 2) return null;
   return (
-    <span className="rounded border border-rule-strong px-2 py-0.5 font-medium">
+    <span className="rounded border border-rule-strong px-2 py-0.5 font-semibold">
       {row.rounds} rounds ·{" "}
       {row.followUpReason === "low_confidence"
         ? "we asked again for a figure"
@@ -346,8 +334,8 @@ function Row({
   const jeopardy = row.immediateJeopardy > 0;
   return (
     <li
-      className={`overflow-hidden rounded border ${
-        jeopardy ? "border-harm-edge" : "border-rule"
+      className={`card row-card overflow-hidden ${
+        jeopardy ? "border-harm-edge" : ""
       }`}
     >
       {/* A ruled divider, not a gap. These two halves are different kinds of
@@ -369,7 +357,7 @@ function Row({
           delivery status, so rather than leaving an empty bar the strip says
           what actually happened — the record has a phone number and the open
           web had nothing else. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-sunk px-5 py-3 text-[14px] text-muted">
+      <div className="t-meta flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule bg-sunk px-5 py-3">
         {row.noEmailFound ? (
           <span>
             Searched the open web and found no address — it keeps its place here
@@ -382,7 +370,7 @@ function Row({
               <span>Nudged once after three days of silence — never twice</span>
             )}
             {row.simulated && (
-              <span className="rounded border border-rule-strong px-2 py-0.5 font-medium">
+              <span className="rounded border border-rule-strong px-2 py-0.5 font-semibold">
                 Simulated reply
               </span>
             )}
@@ -397,7 +385,7 @@ function Row({
             {row.deliveryStatus && <span>AgentMail: {row.deliveryStatus}</span>}
             <button
               onClick={() => onOpenThread(row.inquiryId as Id<"inquiries">)}
-              className="ml-auto font-medium text-ink underline underline-offset-4"
+              className="link ml-auto font-semibold text-ink"
             >
               Read the emails
               <span className="sr-only"> from {facilityName(row.facilityName)}</span>
@@ -432,15 +420,15 @@ function Alerts({
   return (
     <section
       aria-label="New findings since you shortlisted"
-      className="mt-6 rounded border border-harm-edge bg-harm-soft p-5"
+      className="mt-6 rounded-lg border border-harm-edge bg-harm-soft p-5"
     >
-      <h3 className="text-[18px] font-semibold text-harm">
+      <h3 className="t-heading text-harm">
         New in the federal record since you shortlisted
       </h3>
-      <ul className="mt-3 space-y-2 text-[16px]">
+      <ul className="t-body mt-3 space-y-2">
         {alerts.map((a) => (
           <li key={a.id}>
-            <span className="font-medium">{facilityName(a.facilityName)}</span> was cited for{" "}
+            <span className="font-bold">{facilityName(a.facilityName)}</span> was cited for{" "}
             {a.tagDescription.replace(/\.$/, "")}.{" "}
             <span className="text-muted">
               {a.kind === "new_immediate_jeopardy"
@@ -472,9 +460,9 @@ function Spend({ searchId }: { searchId: Id<"searches"> }) {
   const top = spend.byPurpose.slice(0, 3);
 
   return (
-    <p className="mt-10 border-t border-rule pt-5 text-[14px] leading-relaxed text-muted">
+    <p className="t-meta measure mt-10 border-t border-rule pt-5">
       This search has cost{" "}
-      <span className="font-medium tabular-nums text-ink">
+      <span className="font-bold text-ink">
         {spend.fullyPriced ? dollars : "an unpriced amount"}
       </span>{" "}
       in model calls — {spend.calls} call{spend.calls === 1 ? "" : "s"},{" "}
@@ -552,10 +540,11 @@ export function Board({
   return (
     <section className="mx-auto max-w-7xl px-6 py-8">
       <header>
-        <h2 className="text-[24px] font-semibold sm:text-[26px]">
-          {search.label} family · {search.careLevel} care near {search.zip}
+        <h2 className="t-title">
+          {search.label} family · {search.careLevel} care near{" "}
+          <span className="tabular-nums">{search.zip}</span>
         </h2>
-        <p className="mt-2 text-[16px] text-muted">
+        <p className="t-body mt-3 tabular-nums text-muted">
           {search.budgetMax
             ? `Up to ${fmtMoney(search.budgetMax)} a month`
             : "No budget set"}
@@ -564,9 +553,9 @@ export function Board({
 
         {/* Where the campaign is writing from. A fact a judge should be able
             to check on screen rather than take on trust. */}
-        <p className="mt-2 text-[16px] leading-relaxed text-muted">
+        <p className="t-body mt-2 text-muted">
           Writing from{" "}
-          <span className="font-medium text-ink">{search.inboxEmail}</span>
+          <span className="font-semibold text-ink">{search.inboxEmail}</span>
           {search.inboxMode === "shared"
             ? " — a shared inbox, because this AgentMail plan issues one"
             : " — this search's own inbox"}
@@ -578,8 +567,8 @@ export function Board({
             hackathon traffic. A deliberate choice that reads as an afterthought
             looks like a limitation instead of a decision. */}
         {search.demoMode && (
-          <p className="mt-3 rounded border-l-4 border-rule-strong bg-sunk px-4 py-3 text-[16px] leading-relaxed">
-            <span className="font-semibold">
+          <p className="t-body measure mt-3 rounded-r border-l-4 border-rule-strong bg-sunk px-4 py-3">
+            <span className="font-bold">
               No real facility is emailed by this demo.
             </span>{" "}
             Every inquiry below is addressed to an inbox we own. These are real
@@ -593,20 +582,20 @@ export function Board({
             questions the screen never stated, which left a reader to reverse
             engineer the questions from the shape of the replies. */}
         <div className="mt-5 border-t border-rule pt-4">
-          <h3 className="text-[14px] font-medium uppercase tracking-wide text-muted">
+          <h3 className="t-label">
             The same five questions went to every facility
           </h3>
           <ul className="mt-2 flex flex-wrap gap-2">
             {QUESTION_KEYS.map((key) => (
               <li
                 key={key}
-                className="rounded border border-rule px-2.5 py-1 text-[15px]"
+                className="t-body rounded border border-rule px-2.5 py-1"
               >
                 {QUESTION_LABEL[key]}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[14px] text-muted">
+          <p className="t-meta measure mt-2">
             None of the five is published anywhere — not by CMS, not by the
             facility. Asking is the only way to find out, and a facility that
             skips one gets asked again.
@@ -622,7 +611,7 @@ export function Board({
           recording at whatever size the player gives them. */}
       <div
         aria-live="polite"
-        className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded border border-rule bg-rule sm:grid-cols-3 lg:grid-cols-6"
+        className="card mt-6 grid grid-cols-2 gap-x-6 gap-y-7 p-5 sm:grid-cols-3 sm:p-6 lg:grid-cols-6"
       >
         <Counter value={counters.shortlisted} label="shortlisted" />
         <Counter value={counters.contacted} label="contacted" />
@@ -647,7 +636,7 @@ export function Board({
           twelve rows in a deliberate order were indistinguishable from twelve
           rows in no order, and the most useful thing about the ordering was
           invisible to the person it was for. */}
-      <p className="mt-8 text-[16px] text-muted">
+      <p className="t-body measure mt-8 text-muted">
         Ordered by availability first, then by inspection record: facilities
         with an opening rise to the top, and among those, the ones that have not
         harmed anyone come first.
@@ -658,12 +647,8 @@ export function Board({
           heading. The distinction is the entire product and it cannot be
           allowed to scroll away. */}
       <div className="sticky top-0 z-10 mt-3 hidden border-y border-rule bg-paper py-2 sm:grid sm:grid-cols-2 sm:gap-10 sm:px-5">
-        <span className="text-[14px] font-medium uppercase tracking-wide text-muted">
-          Safety · the federal inspection record
-        </span>
-        <span className="text-[14px] font-medium uppercase tracking-wide text-muted">
-          Availability · what the facility told us
-        </span>
+        <span className="t-label">Safety · the federal inspection record</span>
+        <span className="t-label">Availability · what the facility told us</span>
       </div>
 
       {rows.length === 0 ? (
@@ -745,17 +730,17 @@ function ExportBoard({ searchId }: { searchId: Id<"searches"> }) {
       <button
         onClick={download}
         disabled={busy}
-        className="rounded border border-rule-strong px-4 py-2 text-[15px] font-medium disabled:opacity-60"
+        className="btn btn-quiet"
       >
         {busy ? "Building the file…" : "Download this comparison (CSV)"}
       </button>
-      <span className="text-[14px] text-muted">
+      <span className="t-meta measure">
         Every facility, its inspection record, and what it told us — with the
         dates, so the two never get mistaken for each other.
       </span>
-      {error && (
-        <span className="w-full text-[14px] text-harm">{error}</span>
-      )}
+      {/* Not red. A file that failed to build is not a resident who was hurt,
+          and this product has exactly one meaning for that colour. */}
+      {error && <span className="t-meta w-full font-semibold text-ink">{error}</span>}
     </div>
   );
 }

@@ -54,27 +54,27 @@ function ImmediateJeopardyBanner({ citations }: { citations: Citation[] }) {
   return (
     <section
       role="alert"
-      className="surface-harm mb-8 rounded border-l-4 border-harm-edge bg-harm-solid px-5 py-4 text-on-harm"
+      className="surface-harm mb-8 rounded-lg border-l-4 border-harm-edge bg-harm-solid px-5 py-4 text-on-harm"
     >
-      <h2 className="text-lg font-semibold">
+      <h2 className="t-heading">
         Federal inspectors found immediate jeopardy here
       </h2>
-      <p className="mt-1 max-w-3xl text-[16px] leading-relaxed text-on-harm">
+      <p className="t-body measure mt-2 text-on-harm">
         Immediate jeopardy is the most serious finding CMS issues. It means
         inspectors concluded residents were likely to suffer serious injury,
         harm, or death. This facility has {citations.length}{" "}
         {citations.length === 1 ? "such finding" : "such findings"} on record,
         from {years.join(", ")}.
       </p>
-      <ul className="mt-3 space-y-1 text-[16px] text-on-harm">
+      <ul className="t-body mt-3 space-y-1 text-on-harm">
         {citations.map((c) => (
           <li key={c._id}>
-            <span className="font-medium">{fmtDate(c.surveyDate)}</span> —{" "}
+            <span className="font-semibold tabular-nums">{fmtDate(c.surveyDate)}</span> —{" "}
             {c.tagDescription}
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[14px] text-on-harm">
+      <p className="t-meta mt-3 text-on-harm">
         Source: CMS Health Deficiencies, federal inspection record.
       </p>
     </section>
@@ -84,19 +84,27 @@ function ImmediateJeopardyBanner({ citations }: { citations: Citation[] }) {
 function Stars({ value, label }: { value: number; label: string }) {
   return (
     <div>
-      <dt className="text-[15px] text-muted">{label}</dt>
-      <dd className="text-[16px] font-medium">
+      <dt className="t-label">{label}</dt>
+      {/* The two cases are different kinds of text and cannot share a step. A
+          rating is a figure; "not published by CMS" is a sentence, and setting
+          it at the figure's line-height of 1 stacked its two lines on top of
+          each other. */}
+      <dd className={value > 0 ? "t-figure mt-1.5" : "t-body mt-1.5 text-muted"}>
         {value > 0 ? (
           <>
-            {value} <span aria-hidden>{"★".repeat(value)}</span>
+            {value}{" "}
+            {/* Relative to the figure beside it, not a size of its own. Five
+                stars set at 28px overflow the column on a 375px phone, and the
+                numeral is the thing being read anyway. */}
+            <span aria-hidden className="text-[0.55em] tracking-tight">
+              {"★".repeat(value)}
+            </span>
             <span className="sr-only">out of 5</span>
           </>
         ) : (
           // A Special Focus Facility has "" in this column. Zero stars would
           // be a lie of a different kind.
-          <span className="text-muted">
-            not published by CMS
-          </span>
+          "not published by CMS"
         )}
       </dd>
     </div>
@@ -109,31 +117,35 @@ function CitationRow({ c }: { c: Citation }) {
     <li className="border-t border-rule py-4">
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={`rounded border px-2 py-0.5 text-[14px] font-medium ${HARM_CHIP[harm]}`}
+          className={`t-meta rounded border px-2 py-0.5 font-semibold ${HARM_CHIP[harm]}`}
         >
           {HARM_LABEL[harm]}
         </span>
-        <span className="text-[15px] text-muted">
+        <span className="t-meta">
           {SPREAD_LABEL[c.spread]} · Inspected {fmtDate(c.surveyDate)}
           {c.isComplaint ? " · Found after a complaint" : ""}
         </span>
       </div>
 
       {c.full ? (
-        <p className="mt-2 max-w-3xl text-[16px] leading-relaxed">{c.full}</p>
+        <p className="t-body measure mt-2">{c.full}</p>
       ) : (
-        <p className="mt-2 max-w-3xl text-[16px] leading-relaxed text-muted">
+        <p className="t-body measure mt-2 text-muted">
           <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-rule-strong align-middle" />{" "}
           Translating this finding into plain English…
         </p>
       )}
 
       <details className="mt-2">
-        <summary className="cursor-pointer text-[16px] text-muted underline underline-offset-2">
+        <summary className="t-body link cursor-pointer text-muted">
           What the federal record says
         </summary>
-        <p className="mt-1 max-w-3xl text-[16px] text-muted">
-          {c.tag} · scope/severity {c.scopeSeverity} — {c.tagDescription}
+        {/* The tag and the severity letter are codes, not words. They are set
+            in the mono face so a family can see which part of this sentence
+            they would type into a government website. */}
+        <p className="t-meta measure mt-1.5">
+          <span className="t-code">{c.tag}</span> · scope/severity{" "}
+          <span className="t-code">{c.scopeSeverity}</span> — {c.tagDescription}
           {c.correctionDate
             ? ` Facility's date of correction: ${fmtDate(c.correctionDate)}.`
             : " No correction date on record."}
@@ -178,7 +190,7 @@ export function FacilityDetail({
         {onBack && (
           <button
             onClick={onBack}
-            className="mt-4 rounded border border-rule-strong px-4 py-2 text-[16px] font-medium"
+            className="btn btn-quiet mt-4"
           >
             Back
           </button>
@@ -194,7 +206,7 @@ export function FacilityDetail({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-6 text-[16px] underline underline-offset-4"
+          className="link t-body mb-6"
         >
           ← All three facilities
         </button>
@@ -202,35 +214,27 @@ export function FacilityDetail({
 
       <ImmediateJeopardyBanner citations={immediateJeopardy as Citation[]} />
 
-      <h1 className="text-3xl font-semibold leading-tight">
-        {facilityName(facility.name)}
-      </h1>
-      <p className="mt-2 text-[16px] text-muted">
+      <h1 className="t-title">{facilityName(facility.name)}</h1>
+      <p className="t-meta mt-2">
         {facility.city}, {facility.state} {facility.zip} · {facility.phone} ·{" "}
         {facility.certifiedBeds} certified beds · {facility.ownershipType}
       </p>
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-y border-rule py-5 sm:grid-cols-4">
+      <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-6 border-y border-rule py-6 sm:grid-cols-4">
         <Stars value={facility.overallRating} label="CMS overall rating" />
         <Stars
           value={facility.healthInspectionRating}
           label="Health inspection rating"
         />
         <div>
-          <dt className="text-[15px] text-muted">
-            Findings on record
-          </dt>
-          <dd className="text-[16px] font-medium">{counts.total}</dd>
+          <dt className="t-label">Findings on record</dt>
+          <dd className="t-figure mt-1.5">{counts.total}</dd>
         </div>
         <div>
-          <dt className="text-[15px] text-muted">
-            Findings that harmed a resident
-          </dt>
+          <dt className="t-label">Findings that harmed a resident</dt>
           <dd
-            className={`text-[16px] font-medium ${
-              counts.actualHarm + counts.immediateJeopardy > 0
-                ? "text-harm"
-                : ""
+            className={`t-figure mt-1.5 ${
+              counts.actualHarm + counts.immediateJeopardy > 0 ? "text-harm" : ""
             }`}
           >
             {counts.actualHarm + counts.immediateJeopardy}
@@ -246,12 +250,10 @@ export function FacilityDetail({
       <ContactPanel ccn={ccn} />
 
       <section className="mt-8">
-        <h2 className="text-xl font-semibold">What the record shows over time</h2>
+        <h2 className="t-heading">What the record shows over time</h2>
         {riskSummary ? (
           <>
-            <p className="mt-2 max-w-3xl text-[17px] leading-relaxed">
-              {riskSummary.summary}
-            </p>
+            <p className="t-body measure mt-2">{riskSummary.summary}</p>
             <Provenance>
               Pattern: {PATTERN_LABEL[riskSummary.pattern] ?? riskSummary.pattern}.
               Written by {riskSummary.model} from{" "}
@@ -260,16 +262,16 @@ export function FacilityDetail({
             </Provenance>
           </>
         ) : (
-          <p className="mt-2 text-[16px] text-muted">
+          <p className="t-body mt-2 text-muted">
             Reading {counts.total} findings…
           </p>
         )}
       </section>
 
       <section className="mt-8">
-        <h2 className="text-xl font-semibold">
+        <h2 className="t-heading">
           Findings, most serious first
-          <span className="ml-2 text-[16px] font-normal text-muted">
+          <span className="t-meta ml-2">
             {counts.translated} of {worstFirst.length} translated
           </span>
         </h2>
