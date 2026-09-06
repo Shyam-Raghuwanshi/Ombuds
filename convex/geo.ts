@@ -5,7 +5,8 @@ import {
   internalQuery,
   query,
 } from "./_generated/server";
-import { internal, api } from "./_generated/api";
+import { components, internal, api } from "./_generated/api";
+import { GeospatialIndex } from "@convex-dev/geospatial";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -17,38 +18,25 @@ import type { Id } from "./_generated/dataModel";
  * no geocoding vendor, no extra key, and accurate to well inside the radius
  * anyone searches at.
  *
- * The query itself reads a latitude band off an index and refines it with a
- * real distance calculation in the handler. Reading a band rather than the
- * whole table is what keeps this inside a query's limits: 25 miles is about
- * 0.36 degrees of latitude, which is a few hundred rows anywhere in the US.
+ * The radius search itself is the @convex-dev/geospatial component: facility
+ * positions live in an S2 cell index keyed by CCN, and a search asks it for the
+ * nearest N within a distance. It returns them ordered and bounded, so the
+ * handler only ever reads the rows it is about to return.
  */
-
-/** Statute miles per degree of latitude. Constant everywhere. */
-const MILES_PER_DEG_LAT = 69.0;
-const EARTH_RADIUS_MILES = 3958.8;
-
-const toRad = (deg: number) => (deg * Math.PI) / 180;
 
 /**
- * Great-circle distance in miles.
+ * The S2-backed index of every facility's position.
  *
- * Haversine rather than a flat approximation: the error of a flat-earth
- * estimate grows with latitude, and "is this home 24 or 26 miles away" is a
- * question a family answers with their driving time, so it should be right.
+ * Keyed by CCN, which is the federal certification number and already the
+ * unique key for a facility everywhere else in this codebase — so a point and
+ * its facility row can never drift apart or need reconciling.
  */
-function haversineMiles(
-  aLat: number,
-  aLng: number,
-  bLat: number,
-  bLng: number,
-): number {
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
-}
+export const facilityIndex = new GeospatialIndex<string, {}>(
+  components.geospatial,
+);
+
+/** The spatial index speaks metres; every figure a family sees is in miles. */
+const METRES_PER_MILE = 1609.344;
 
 // =============================================================================
 // Building the ZIP index
@@ -366,42 +354,40 @@ export const facilitiesNearZip = query({
     );
     if (!origin) return { origin: null, facilities: [] };
 
-    // A latitude band wide enough to contain the circle. Longitude is not
-    // bounded on the index — degrees of longitude shrink towards the poles, so
-    // the band is refined by real distance below rather than by a second range.
-    const dLat = radius / MILES_PER_DEG_LAT;
+    // The S2 index does the geometry. It returns the nearest keys already
+    // ordered and already bounded by distance, so nothing here reads a row it
+    // is not going to return — which is the difference between this and
+    // scanning a latitude band and throwing most of it away.
+    const want = limit ?? 60;
+    const nearest = await facilityIndex.queryNearest(
+      ctx,
+      { latitude: origin.latitude, longitude: origin.longitude },
+      want,
+      radius * METRES_PER_MILE,
+    );
 
-    const band = await ctx.db
-      .query("facilities")
-      .withIndex("by_latitude", (q) =>
-        q
-          .gte("latitude", origin.latitude - dLat)
-          .lte("latitude", origin.latitude + dLat),
-      )
-      .collect();
-
-    const facilities = band
-      .map((f) => ({
+    const facilities: NearbyFacility[] = [];
+    for (const hit of nearest) {
+      const f = await ctx.db
+        .query("facilities")
+        .withIndex("by_ccn", (q) => q.eq("ccn", hit.key))
+        .unique();
+      if (!f) continue;
+      facilities.push({
         ccn: f.ccn,
         name: f.name,
         city: f.city,
         state: f.state,
         zip: f.zip,
         phone: f.phone,
-        distanceMiles: haversineMiles(
-          origin.latitude,
-          origin.longitude,
-          f.latitude,
-          f.longitude,
-        ),
+        // The index reports metres along the sphere; the product speaks miles.
+        distanceMiles: hit.distance / METRES_PER_MILE,
         overallRating: f.overallRating,
         abuseIcon: f.abuseIcon,
         specialFocusStatus: f.specialFocusStatus ?? null,
         certifiedBeds: f.certifiedBeds,
-      }))
-      .filter((f) => f.distanceMiles <= radius)
-      .sort((a, b) => a.distanceMiles - b.distanceMiles)
-      .slice(0, limit ?? 60);
+      });
+    }
 
     return {
       origin: {
@@ -521,5 +507,68 @@ export const startSearchNearZip = action({
       matched: near.facilities.length,
       reason: "started",
     };
+  },
+});
+
+// =============================================================================
+// Populating the spatial index
+// =============================================================================
+
+/** Points written per transaction. Each insert writes several S2 cells. */
+const INDEX_CHUNK = 100;
+
+/**
+ * Write one page of facilities into the spatial index.
+ *
+ * Keyed by CCN, so a re-run overwrites rather than duplicating and the sweep is
+ * safe to restart from anywhere.
+ */
+export const indexFacilityPage = internalMutation({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    indexed: v.optional(v.number()),
+  },
+  returns: v.object({ indexed: v.number(), done: v.boolean() }),
+  handler: async (ctx, { cursor, indexed }) => {
+    const page = await ctx.db
+      .query("facilities")
+      .paginate({ cursor, numItems: INDEX_CHUNK });
+
+    let total = indexed ?? 0;
+    for (const f of page.page) {
+      // 0,0 is the Gulf of Guinea and is what CMS publishes when it holds no
+      // coordinate. Indexing it would put a Californian nursing home in the
+      // Atlantic and return it for searches nowhere near it.
+      if (f.latitude === 0 && f.longitude === 0) continue;
+      await facilityIndex.insert(
+        ctx,
+        f.ccn,
+        { latitude: f.latitude, longitude: f.longitude },
+        {},
+      );
+      total += 1;
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.geo.indexFacilityPage, {
+        cursor: page.continueCursor,
+        indexed: total,
+      });
+      return { indexed: total, done: false };
+    }
+    console.log(`[geo] spatial index built: ${total} facilities`);
+    return { indexed: total, done: true };
+  },
+});
+
+/** Build the spatial index from the current facility table. */
+export const rebuildSpatialIndex = action({
+  args: {},
+  returns: v.object({ started: v.boolean() }),
+  handler: async (ctx): Promise<{ started: boolean }> => {
+    await ctx.scheduler.runAfter(0, internal.geo.indexFacilityPage, {
+      cursor: null,
+    });
+    return { started: true };
   },
 });

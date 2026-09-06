@@ -5,6 +5,7 @@ import agent from "@convex-dev/agent/convex.config";
 import agentmail from "@agentmail/convex/convex.config";
 import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import geospatial from "@convex-dev/geospatial/convex.config";
 import workpool from "@convex-dev/workpool/convex.config";
 
 // App-owned root routing: `convex/http.ts` keeps the root, so the Convex Auth
@@ -43,6 +44,11 @@ app.use(firecrawl, {
 // No httpPrefix — the SPA catch-all is registered inside convex/http.ts so it
 // cannot shadow the auth or webhook routes.
 app.use(staticHosting);
+
+// "Homes within 25 miles of this ZIP", over all 14,690 facilities. CMS ships
+// latitude and longitude on every row and Convex has no native geo query, so
+// the S2-backed index does the radius search (convex/geo.ts).
+app.use(geospatial);
 
 // Bounded concurrency so a 15-facility fan-out does not stampede AgentMail.
 app.use(workpool, { name: "inquiryPool" });

@@ -19,6 +19,7 @@ import type * as deficiencies from "../deficiencies.js";
 import type * as demo from "../demo.js";
 import type * as email from "../email.js";
 import type * as enrichment from "../enrichment.js";
+import type * as exports from "../exports.js";
 import type * as geo from "../geo.js";
 import type * as http from "../http.js";
 import type * as lib_contact from "../lib/contact.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   demo: typeof demo;
   email: typeof email;
   enrichment: typeof enrichment;
+  exports: typeof exports;
   geo: typeof geo;
   http: typeof http;
   "lib/contact": typeof lib_contact;
@@ -99,6 +101,7 @@ export declare const components: {
   agentmail: import("@agentmail/convex/_generated/component.js").ComponentApi<"agentmail">;
   firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
+  geospatial: import("@convex-dev/geospatial/_generated/component.js").ComponentApi<"geospatial">;
   inquiryPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"inquiryPool">;
   enrichmentPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"enrichmentPool">;
 };

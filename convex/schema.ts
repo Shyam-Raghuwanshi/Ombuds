@@ -113,12 +113,7 @@ export default defineSchema({
     .index("by_zip", ["zip"])
     .index("by_state_city", ["state", "city"])
     .index("by_rating", ["overallRating"])
-    .index("by_contact_status", ["contactStatus"])
-    // Radius search reads a latitude band and refines it in the handler. The
-    // alternative is scanning all 14,690 rows, which is both slow and close to
-    // a query's read limit; a 25-mile band is a few hundred rows anywhere in
-    // the country.
-    .index("by_latitude", ["latitude"]),
+    .index("by_contact_status", ["contactStatus"]),
 
   deficiencies: defineTable({
     ccn: v.string(),

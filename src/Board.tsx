@@ -1,4 +1,5 @@
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtDate } from "./severity";
@@ -637,6 +638,8 @@ export function Board({
         unreachable={rows.filter((r) => r.noEmailFound).length}
       />
 
+      <ExportBoard searchId={searchId} />
+
       <Alerts alerts={alerts} />
 
       {/* The board has always been sorted — openings first, then by how badly
@@ -688,5 +691,71 @@ export function Board({
 
       <Spend searchId={searchId} />
     </section>
+  );
+}
+
+/**
+ * Take the shortlist away.
+ *
+ * A family does not choose a care home in one sitting, and rarely alone. The
+ * comparison has to survive leaving this screen — to be sorted by a daughter
+ * who is not signed in, argued over by a brother in another state, taken to a
+ * tour on a printout. A board that only exists behind a session is no use in
+ * the conversation that actually decides this.
+ *
+ * The file is generated on demand rather than kept, because it would otherwise
+ * be a snapshot going quietly stale in file storage while the board behind it
+ * moved on.
+ */
+function ExportBoard({ searchId }: { searchId: Id<"searches"> }) {
+  const exportCsv = useAction(api.exports.boardCsv);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function download() {
+    setBusy(true);
+    setError(null);
+    void exportCsv({ searchId })
+      .then((result) => {
+        if (!result) {
+          setError("That search is no longer available to download.");
+          return;
+        }
+        // An anchor rather than assigning location: the file is served from
+        // Convex storage on another origin, and navigating there would take
+        // the family off their own board to a raw CSV.
+        const a = document.createElement("a");
+        a.href = result.url;
+        a.download = result.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      })
+      .catch((e) => {
+        console.error("board export failed", e);
+        setError(
+          "We could not build that file just now. Nothing on the board has changed — trying again usually works.",
+        );
+      })
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <button
+        onClick={download}
+        disabled={busy}
+        className="rounded border border-rule-strong px-4 py-2 text-[15px] font-medium disabled:opacity-60"
+      >
+        {busy ? "Building the file…" : "Download this comparison (CSV)"}
+      </button>
+      <span className="text-[14px] text-muted">
+        Every facility, its inspection record, and what it told us — with the
+        dates, so the two never get mistaken for each other.
+      </span>
+      {error && (
+        <span className="w-full text-[14px] text-harm">{error}</span>
+      )}
+    </div>
   );
 }
