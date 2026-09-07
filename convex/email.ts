@@ -1521,7 +1521,17 @@ export const sendFollowUp = internalAction({
           amCtx(ctx),
           search.inboxId,
           anchor,
-          { text: body, labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`] },
+          {
+            text: body,
+            // Addressed explicitly. The anchor we thread onto is our OWN sent
+            // letter whenever the reply we are answering was a seeded persona,
+            // because a simulated reply has no AgentMail message to hang off.
+            // Replying to your own message addresses it back to yourself, so
+            // without this the follow-up left the family emailing their own
+            // inbox — correct on the board, wrong in the mailbox.
+            to: inquiry.toEmail,
+            labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`],
+          },
         );
         outboundId = id as unknown as string;
       }
@@ -1803,7 +1813,13 @@ export const sendNudge = internalAction({
           amCtx(ctx),
           search.inboxId,
           anchor,
-          { text: body, labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`] },
+          {
+            // Same reason as the follow-up: the anchor is our own letter, so
+            // the recipient has to be named or the nudge goes to ourselves.
+            text: body,
+            to: inquiry.toEmail,
+            labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`],
+          },
         );
         outboundId = id as unknown as string;
       }
