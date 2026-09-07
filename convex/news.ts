@@ -145,6 +145,17 @@ export const saveNews = internalMutation({
       inserted++;
     }
 
+    // Rows stored before a domain joined the exclude list are swept here, so
+    // the list governs what is on the page rather than only what arrives next.
+    // Without this a story we have decided is not a source stays on a
+    // facility's record forever, because a rescan only ever upserts.
+    for (const row of await ctx.db
+      .query("facilityNews")
+      .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
+      .collect()) {
+      if (isExcludedDomain(row.url)) await ctx.db.delete(row._id);
+    }
+
     // Stamped even when nothing was found, so "we looked and there was nothing"
     // is distinguishable from "we never looked". The UI says which.
     const facility = await ctx.db
@@ -158,6 +169,28 @@ export const saveNews = internalMutation({
 
 type Hit = { url: string; title: string; snippet: string };
 
+/**
+ * Whether a result comes from a domain we asked Firecrawl not to return.
+ *
+ * `excludeDomains` is already passed on the search, so in principle nothing
+ * from this list can arrive. In practice it does: a TikTok video was scored
+ * "concerning" and shown against a real facility's harm record, and tiktok.com
+ * had been on the exclude list the whole time. Whether the parameter is
+ * unsupported by the search backend or silently dropped somewhere in the
+ * component, trusting it means the entire list — the lawyer-marketing and
+ * SEO-spam domains, not just the social ones — is enforced by nobody.
+ *
+ * So the list is applied here as well, on our side of the wire, where we can
+ * see it work. Subdomains count: "m.tiktok.com" is tiktok.com.
+ */
+function isExcludedDomain(url: string): boolean {
+  const host = hostnameOf(url);
+  if (!host) return false;
+  return NEWS_EXCLUDE_DOMAINS.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
+}
+
 function normalizeNewsHits(response: unknown): Hit[] {
   const out: Hit[] = [];
   const buckets = (response ?? {}) as Record<string, unknown>;
@@ -168,6 +201,7 @@ function normalizeNewsHits(response: unknown): Hit[] {
       const row = item as Record<string, any>;
       const url: unknown = row.url ?? row.metadata?.sourceURL;
       if (typeof url !== "string" || !url) continue;
+      if (isExcludedDomain(url)) continue;
       if (out.some((h) => h.url === url)) continue;
       out.push({
         url,
