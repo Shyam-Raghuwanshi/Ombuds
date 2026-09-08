@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-06T19:17:32Z
+- **Last updated:** 2026-09-08T20:46:48Z
 
 ## Log
 
@@ -540,7 +540,7 @@ so a file forwarded to someone who has never seen the product cannot imply
 otherwise.
 
 
-### 2026-09-06 - working tree
+### 2026-09-07 - 1b14d2c
 A family who had already run one search could never get back to the pitch, the
 ZIP-code search, or any search but their newest: the effect that lands a
 returning family on their board re-ran every time the view returned home and put
@@ -606,3 +606,36 @@ XML, and a browser answers that by silently refusing to draw the file at all.
 The favicon was rendering at zero by zero and nothing said so. Both files are
 now checked for well-formedness, and the colour swap is verified rendering as an
 image in both schemes (`logo.svg`, `logo-with-text.svg`, `index.html`).
+
+### 2026-09-08 - 9c41779
+A TikTok video was scored "concerning" and shown against a real facility's harm
+record. `tiktok.com` had been on `NEWS_EXCLUDE_DOMAINS` the whole time: the list
+is passed to Firecrawl as `excludeDomains` and is not honoured, so none of it
+was in force — not the social domains, and not the lawyer-marketing and SEO-spam
+domains that make up most of the list. On a rescan of the worst facility in the
+sample, ten of fifteen results came from domains already named as not sources.
+The list is now applied in `normalizeNewsHits`, with subdomains counting, and
+`saveNews` sweeps stored rows whose domain is excluded — a rescan only upserts,
+so a story we have decided is not a source would otherwise sit on a facility's
+record forever (`convex/news.ts`).
+
+### 2026-09-08 - c22740b
+Real AgentMail delivery is on in production, and turning it on made a latent
+bug visible. A follow-up threads onto `threadAnchor`, which falls back to our
+own sent letter whenever the reply being answered was a seeded persona — a
+simulated reply has no AgentMail message to hang off. Replying to your own
+message addresses it back to yourself, so every round-two letter and every nudge
+went to the family's own inbox. The board was right, because the persona reply
+is generated locally either way; the mailbox was wrong. `ReplyArgs` takes an
+optional `to`, so both reply sites now name the recipient while keeping the same
+anchor and the conversation stays one thread (`convex/email.ts`).
+
+Verified end to end against the live deployment: anonymous sign-in with no form,
+the cold-open button returning in about a second, a dedicated per-search
+AgentMail inbox, seven real sends — five first letters and two in-thread
+follow-ups — all addressed to the inbox we control, and the board filling from
+queued through replied and clarifying to answered. Per-search inboxes provision
+only while an inbox slot is free; the free tier allows three, and a search that
+cannot get one falls back to the shared inbox and records `inboxMode: "shared"`
+rather than pretending. Deficiency translations covered 865 of 865 citations
+from 1,412 cached meanings, and one full campaign cost $0.088 in model calls.
