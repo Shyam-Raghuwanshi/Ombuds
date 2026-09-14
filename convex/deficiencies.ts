@@ -797,6 +797,14 @@ export const facilityDetail = query({
         healthInspectionRating: v.number(),
         abuseIcon: v.boolean(),
         lastCmsSync: v.number(),
+        // The columns CMS already computes that a star rating hides. Null means
+        // CMS published nothing, which is never the same as zero.
+        specialFocusStatus: v.union(v.string(), v.null()),
+        numberOfFines: v.union(v.number(), v.null()),
+        totalFinesUsd: v.union(v.number(), v.null()),
+        changedOwnershipLast12Months: v.union(v.boolean(), v.null()),
+        rnHoursWeekend: v.union(v.number(), v.null()),
+        nurseTurnover: v.union(v.number(), v.null()),
       }),
       counts: v.object({
         total: v.number(),
@@ -869,6 +877,12 @@ export const facilityDetail = query({
         healthInspectionRating: facility.healthInspectionRating,
         abuseIcon: facility.abuseIcon,
         lastCmsSync: facility.lastCmsSync,
+        specialFocusStatus: facility.specialFocusStatus ?? null,
+        numberOfFines: facility.numberOfFines ?? null,
+        totalFinesUsd: facility.totalFinesUsd ?? null,
+        changedOwnershipLast12Months: facility.changedOwnershipLast12Months ?? null,
+        rnHoursWeekend: facility.rnHoursWeekend ?? null,
+        nurseTurnover: facility.nurseTurnover ?? null,
       },
       counts,
       latestSurveyDate,

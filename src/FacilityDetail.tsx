@@ -157,6 +157,91 @@ function CitationRow({ c }: { c: Citation }) {
 }
 
 /**
+ * What CMS already computes and a star rating hides.
+ *
+ * These were ingested from the first day and shown nowhere on this page: CMS's
+ * own list of chronically poor performers, the fines it levied, whether the
+ * home changed hands this year, and the staffing figures a facility's emailed
+ * claims get checked against. Every one is the federal record verbatim, and a
+ * figure CMS did not publish is left out rather than shown as zero.
+ */
+function FederalSignals({
+  facility,
+}: {
+  facility: {
+    specialFocusStatus: string | null;
+    numberOfFines: number | null;
+    totalFinesUsd: number | null;
+    changedOwnershipLast12Months: boolean | null;
+    rnHoursWeekend: number | null;
+    nurseTurnover: number | null;
+  };
+}) {
+  const rows: { term: string; detail: string; harm?: boolean }[] = [];
+  if (facility.specialFocusStatus) {
+    rows.push({
+      term: "CMS Special Focus program",
+      detail: `${facility.specialFocusStatus}. CMS places facilities with a sustained history of serious quality problems on this list.`,
+      harm: true,
+    });
+  }
+  if (facility.numberOfFines !== null) {
+    rows.push({
+      term: "Federal fines",
+      detail:
+        facility.numberOfFines === 0
+          ? "No fines on record."
+          : `${facility.numberOfFines} fine${facility.numberOfFines === 1 ? "" : "s"}${
+              facility.totalFinesUsd !== null
+                ? `, $${facility.totalFinesUsd.toLocaleString("en-US")} in total`
+                : ""
+            }.`,
+    });
+  }
+  if (facility.changedOwnershipLast12Months !== null) {
+    rows.push({
+      term: "Ownership",
+      detail: facility.changedOwnershipLast12Months
+        ? "Changed ownership in the last 12 months."
+        : "No change of ownership in the last 12 months.",
+    });
+  }
+  if (facility.rnHoursWeekend !== null) {
+    rows.push({
+      term: "Registered nurse time at weekends",
+      detail: `${facility.rnHoursWeekend.toFixed(2)} hours per resident per day.`,
+    });
+  }
+  if (facility.nurseTurnover !== null) {
+    rows.push({
+      term: "Nursing staff turnover",
+      detail: `${facility.nurseTurnover.toFixed(1)}% in a year.`,
+    });
+  }
+  if (rows.length === 0) return null;
+
+  return (
+    <section className="mt-6">
+      <h2 className="t-heading">Other signals in the federal record</h2>
+      <dl className="mt-3 grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.term}>
+            <dt className="t-label">{row.term}</dt>
+            <dd className={`t-body mt-1 ${row.harm ? "font-bold text-harm" : ""}`}>
+              {row.detail}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <Provenance>
+        CMS Provider Information, as published. Figures CMS did not publish for
+        this facility are left out rather than shown as zero.
+      </Provenance>
+    </section>
+  );
+}
+
+/**
  * Every finding on record, newest inspection first, a page at a time.
  *
  * The section above shows the 25 most serious. A facility with two hundred
@@ -300,6 +385,8 @@ export function FacilityDetail({
         {fmtDate(facility.lastCmsSync)}. Most recent inspection in this record:{" "}
         {fmtDate(detail.latestSurveyDate)}.
       </Provenance>
+
+      <FederalSignals facility={facility} />
 
       <ContactPanel ccn={ccn} />
 
