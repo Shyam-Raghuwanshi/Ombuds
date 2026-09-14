@@ -1,4 +1,5 @@
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import { facilityName } from "./facilityName";
 import { api } from "../convex/_generated/api";
 import { ContactPanel } from "./ContactPanel";
@@ -155,6 +156,57 @@ function CitationRow({ c }: { c: Citation }) {
   );
 }
 
+/**
+ * Every finding on record, newest inspection first, a page at a time.
+ *
+ * The section above shows the 25 most serious. A facility with two hundred
+ * findings has a story in the other hundred and seventy-five — which failures
+ * came back, and when — and a family should be able to read all of it without
+ * the page loading all of it up front.
+ */
+function FullHistory({ ccn, total }: { ccn: string; total: number }) {
+  const [open, setOpen] = useState(false);
+  const { results, status, loadMore } = usePaginatedQuery(
+    api.deficiencies.facilityCitations,
+    open ? { ccn } : "skip",
+    { initialNumItems: 25 },
+  );
+
+  return (
+    <section className="mt-8">
+      <h2 className="t-heading">Every finding on record, newest first</h2>
+      {!open ? (
+        <button onClick={() => setOpen(true)} className="btn btn-quiet mt-3">
+          Show all {total} findings
+        </button>
+      ) : (
+        <>
+          <ul className="mt-2">
+            {results.map((c) => (
+              <CitationRow key={c._id} c={c as Citation} />
+            ))}
+          </ul>
+          {status === "LoadingFirstPage" && (
+            <Loading what="Loading the inspection history…" />
+          )}
+          {status === "LoadingMore" && <Loading what="Loading more findings…" />}
+          {status === "CanLoadMore" && (
+            <button onClick={() => loadMore(25)} className="btn btn-quiet mt-3">
+              Show 25 more · {results.length} of {total} shown
+            </button>
+          )}
+          {status === "Exhausted" && (
+            <Provenance>
+              All {results.length} findings shown. Federal record, CMS Health
+              Deficiencies.
+            </Provenance>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 export function FacilityDetail({
   ccn,
   onBack,
@@ -287,6 +339,10 @@ export function FacilityDetail({
           </Provenance>
         )}
       </section>
+
+      {counts.total > worstFirst.length && (
+        <FullHistory ccn={ccn} total={counts.total} />
+      )}
 
       <NewsPanel ccn={ccn} error={newsError} />
     </article>

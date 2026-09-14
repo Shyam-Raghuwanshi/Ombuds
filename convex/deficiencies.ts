@@ -896,13 +896,20 @@ export const facilityDetail = query({
   },
 });
 
-/** Full citation history, worst-first, paginated. */
+/**
+ * Full citation history, newest inspection first, paginated.
+ *
+ * It used to read the `by_ccn` index in descending creation order, which is the
+ * reverse of the order CMS happened to return rows in — close to oldest first,
+ * and described nowhere. The survey date is the order a family reads a history
+ * in, so it has its own index.
+ */
 export const facilityCitations = query({
   args: { ccn: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, { ccn, paginationOpts }) => {
     const page = await ctx.db
       .query("deficiencies")
-      .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
+      .withIndex("by_ccn_survey", (q) => q.eq("ccn", ccn))
       .order("desc")
       .paginate(paginationOpts);
     return { ...page, page: await joinTranslations(ctx, page.page) };

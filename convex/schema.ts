@@ -129,7 +129,11 @@ export default defineSchema({
     // read time. 300,000 rows share ~1,500 meanings. See CLAUDE.md section 10.
   })
     .index("by_ccn", ["ccn"])
-    .index("by_ccn_harm", ["ccn", "harmLevel"]),
+    .index("by_ccn_harm", ["ccn", "harmLevel"])
+    // The full history, newest inspection first, a page at a time. A facility
+    // can carry two hundred findings; the detail page shows the worst 25 and
+    // pages through the rest in date order rather than loading them all.
+    .index("by_ccn_survey", ["ccn", "surveyDate"]),
 
   // The ONLY place OpenAI-translated text lives. Cached by (tag, scopeSeverity)
   // — this is the difference between ~$1 and ~$510.
