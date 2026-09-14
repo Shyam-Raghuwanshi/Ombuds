@@ -210,9 +210,11 @@ function FullHistory({ ccn, total }: { ccn: string; total: number }) {
 export function FacilityDetail({
   ccn,
   onBack,
+  backLabel = "Back",
 }: {
   ccn: string;
   onBack?: () => void;
+  backLabel?: string;
 }) {
   const detail = useQuery(api.deficiencies.facilityDetail, { ccn });
   // Translation is triggered here — on view — and never during ingest.
@@ -260,7 +262,7 @@ export function FacilityDetail({
           onClick={onBack}
           className="link t-body mb-6"
         >
-          ← All three facilities
+          ← {backLabel}
         </button>
       )}
 

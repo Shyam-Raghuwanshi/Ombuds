@@ -299,7 +299,9 @@ type View =
   | { name: "new" }
   | { name: "board"; searchId: Id<"searches"> }
   | { name: "thread"; searchId: Id<"searches">; inquiryId: Id<"inquiries"> }
-  | { name: "facility"; ccn: string };
+  // `searchId` is the board the family came from, so Back returns them to it
+  // rather than dropping them on the front page mid-campaign.
+  | { name: "facility"; ccn: string; searchId?: Id<"searches"> };
 
 export default function App() {
   const { isAuthenticated, signInFailed } = useSilentAnonymousSignIn();
@@ -397,7 +399,9 @@ export default function App() {
               onOpenThread={(inquiryId) =>
                 setView({ name: "thread", searchId: view.searchId, inquiryId })
               }
-              onOpenFacility={(ccn) => setView({ name: "facility", ccn })}
+              onOpenFacility={(ccn) =>
+                setView({ name: "facility", ccn, searchId: view.searchId })
+              }
             />
           </ErrorBoundary>
         )}
@@ -413,7 +417,20 @@ export default function App() {
 
         {view.name === "facility" && (
           <ErrorBoundary fallbackLabel="on this facility" onReset={goHome}>
-            <FacilityDetail ccn={view.ccn} onBack={goHome} />
+            {/* Back goes where the family came from. Opened from a board, it
+                used to drop them on the front page and label the way there
+                "All three facilities" — a list they had never seen. */}
+            <FacilityDetail
+              ccn={view.ccn}
+              backLabel={
+                view.searchId ? "Back to the board" : "Back to the three facilities"
+              }
+              onBack={() =>
+                view.searchId
+                  ? setView({ name: "board", searchId: view.searchId })
+                  : goHome()
+              }
+            />
           </ErrorBoundary>
         )}
       </main>
