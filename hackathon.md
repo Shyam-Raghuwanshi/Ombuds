@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-08T20:46:48Z
+- **Last updated:** 2026-09-14T08:38:03Z
 
 ## Log
 
@@ -639,3 +639,18 @@ only while an inbox slot is free; the free tier allows three, and a search that
 cannot get one falls back to the shared inbox and records `inboxMode: "shared"`
 rather than pretending. Deficiency translations covered 865 of 865 citations
 from 1,412 cached meanings, and one full campaign cost $0.088 in model calls.
+
+### 2026-09-14 - 472a4f3
+AgentMail raised the organisation's inbox limit from three to twenty-five, so
+every judge who opens the live app now gets a search with its own inbox; the
+three-inbox cap described in the previous entry no longer applies. Nothing in
+the app had to change for that — provisioning was already one inbox per search,
+and only fell back to the shared inbox when AgentMail refused. Verified against
+the live deployment: two fresh anonymous sessions each provisioned a dedicated
+inbox, holding the organisation at four inboxes at once, past the old cap; both
+probes were then deleted.
+The board used to explain a shared inbox as the plan's doing. With the cap
+raised, a search lands there only when provisioning fails for another reason, so
+the copy now says what happened — AgentMail could not issue this search its own
+— rather than naming a cause we no longer know to be the cause
+(`src/Board.tsx`).
