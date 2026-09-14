@@ -220,8 +220,19 @@ export const saveDiscovery = internalMutation({
 
     // Patch only what this run actually learned. A later failed run must not
     // erase an address an earlier successful run found.
+    //
+    // Nor may it relabel one. A weekly re-check whose scrape comes back empty —
+    // a slow page, a script-rendered footer — used to set `no_email_found` on a
+    // facility that still had the address it was found with, so the contact
+    // panel said "no address published" beside a row the campaign was writing
+    // to. Keeping the address means keeping what it is: discovered, with the
+    // page it was read from.
+    const keepsAddress =
+      facility.contactEmail !== undefined &&
+      args.contactEmail === undefined &&
+      args.contactStatus !== "discovered";
     const patch: Record<string, unknown> = {
-      contactStatus: args.contactStatus,
+      contactStatus: keepsAddress ? "discovered" : args.contactStatus,
       enrichedAt: Date.now(),
       // Cleared on every run so a stale failure never sits under a fresh result.
       enrichmentError: args.enrichmentError,
@@ -716,7 +727,14 @@ export const contactCard = query({
       contactSourceUrl: f.contactSourceUrl ?? null,
       // "unstarted" is a real state the UI must render differently from a
       // failure: nothing has been attempted yet.
-      contactStatus: f.contactStatus ?? "unstarted",
+      //
+      // A stored address is shown as discovered whatever a later re-check
+      // wrote, the same rule `saveDiscovery` now applies on write — so a row
+      // relabelled before that fix reads correctly without being rewritten.
+      contactStatus:
+        f.contactEmail && f.contactStatus !== "pending"
+          ? "discovered"
+          : (f.contactStatus ?? "unstarted"),
       enrichmentError: f.enrichmentError ?? null,
       enrichedAt: f.enrichedAt ?? null,
       enrichment: f.enrichment
