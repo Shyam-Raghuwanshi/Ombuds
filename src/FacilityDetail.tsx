@@ -179,9 +179,18 @@ function FederalSignals({
 }) {
   const rows: { term: string; detail: string; harm?: boolean }[] = [];
   if (facility.specialFocusStatus) {
+    // CMS publishes a code, not a sentence. "SFF" is the list itself; a
+    // candidate is a facility CMS has shortlisted for it.
+    const code = facility.specialFocusStatus.trim().toUpperCase();
+    const status =
+      code === "SFF"
+        ? "On CMS's Special Focus Facility list"
+        : code === "SFF CANDIDATE"
+          ? "A candidate for CMS's Special Focus Facility list"
+          : `CMS special focus status: ${facility.specialFocusStatus}`;
     rows.push({
       term: "CMS Special Focus program",
-      detail: `${facility.specialFocusStatus}. CMS places facilities with a sustained history of serious quality problems on this list.`,
+      detail: `${status}. CMS uses this list for facilities with a sustained history of serious quality problems.`,
       harm: true,
     });
   }
