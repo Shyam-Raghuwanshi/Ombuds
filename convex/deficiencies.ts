@@ -411,6 +411,8 @@ export const riskSummaryBasis = internalQuery({
     facilityName: v.string(),
     found: v.boolean(),
     citationCount: v.number(),
+    // Actual harm plus immediate jeopardy: what the pattern label is held to.
+    harmFindings: v.number(),
     latestSurveyDate: v.number(),
     cached: v.union(
       v.null(),
@@ -444,6 +446,9 @@ export const riskSummaryBasis = internalQuery({
       facilityName: facility?.name ?? "",
       found: facility !== null,
       citationCount: rows.length,
+      harmFindings: rows.filter(
+        (r) => r.harmLevel === "actual_harm" || r.harmLevel === "immediate_jeopardy",
+      ).length,
       latestSurveyDate,
       cached: existing
         ? {
@@ -588,32 +593,55 @@ export const putRiskSummary = internalMutation({
  * changes — CMS refreshes monthly, so this is one call per facility per month
  * at worst. Never generated during ingest.
  */
-export const summarizeFacilityRisk = action({
-  args: { ccn: v.string(), force: v.optional(v.boolean()) },
-  returns: v.object({
-    ccn: v.string(),
-    summary: v.string(),
-    pattern: v.string(),
-    model: v.string(),
-    cached: v.boolean(),
-  }),
-  handler: async (
-    ctx,
-    { ccn, force },
-  ): Promise<{
-    ccn: string;
-    summary: string;
-    pattern: string;
-    model: string;
-    cached: boolean;
-  }> => {
+const riskSummaryResult = v.object({
+  ccn: v.string(),
+  summary: v.string(),
+  pattern: v.string(),
+  model: v.string(),
+  cached: v.boolean(),
+});
+
+type RiskSummaryResult = {
+  ccn: string;
+  summary: string;
+  pattern: string;
+  model: string;
+  cached: boolean;
+};
+
+/**
+ * Whether a stored summary has to be written again before it is shown.
+ *
+ * Three reasons, and the last two were found on the front page: the record
+ * changed; the summary was written by a provider the product no longer runs on
+ * (a build-time model's row survived the switch and was labelled with its
+ * model name under a real facility — CLAUDE.md section 11); or its pattern
+ * label contradicts the harm counts it sits beside.
+ */
+function riskSummaryIsStale(
+  cached: { citationCount: number; latestSurveyDate: number; model: string; pattern: string },
+  basis: { citationCount: number; latestSurveyDate: number; harmFindings: number },
+): boolean {
+  const provider = modelTag("facilityRiskSummary").split(":")[0];
+  return (
+    cached.citationCount !== basis.citationCount ||
+    cached.latestSurveyDate !== basis.latestSurveyDate ||
+    !cached.model.startsWith(`${provider}:`) ||
+    reconcileRiskPattern(cached.pattern as RiskPattern, basis.harmFindings) !==
+      cached.pattern
+  );
+}
+
+async function runRiskSummary(
+  ctx: ActionCtx,
+  ccn: string,
+  force: boolean,
+  userId: string | null,
+): Promise<RiskSummaryResult> {
     const basis = await ctx.runQuery(internal.deficiencies.riskSummaryBasis, { ccn });
     if (!basis.found) throw new Error(`No facility ingested for CCN ${ccn}`);
 
-    const stale =
-      basis.cached === null ||
-      basis.cached.citationCount !== basis.citationCount ||
-      basis.cached.latestSurveyDate !== basis.latestSurveyDate;
+    const stale = basis.cached === null || riskSummaryIsStale(basis.cached, basis);
 
     if (basis.cached && !stale && !force) {
       return {
@@ -623,6 +651,30 @@ export const summarizeFacilityRisk = action({
         model: basis.cached.model,
         cached: true,
       };
+    }
+
+    // Counted only when a model is about to be paid. A visitor opening a
+    // facility someone else already opened costs nothing and is never limited.
+    if (!force) {
+      const budget = await allow(ctx, userId, [
+        { name: "summaryPerUser", perUser: true },
+        { name: "summaryGlobal" },
+      ]);
+      if (!budget.ok) {
+        if (basis.cached) {
+          return {
+            ccn,
+            summary: basis.cached.summary,
+            pattern: reconcileRiskPattern(
+              basis.cached.pattern as RiskPattern,
+              basis.harmFindings,
+            ),
+            model: basis.cached.model,
+            cached: true,
+          };
+        }
+        throw new Error("risk summary is rate limited; try again shortly");
+      }
     }
 
     const { object, model } = await generateStructured({
@@ -635,17 +687,35 @@ export const summarizeFacilityRisk = action({
         "A two-to-three sentence description of the pattern in one facility's federal inspection history.",
     });
 
+    // The label is held to the counts it will be shown beside.
+    const pattern = reconcileRiskPattern(object.pattern, basis.harmFindings);
+
     await ctx.runMutation(internal.deficiencies.putRiskSummary, {
       ccn,
       summary: object.summary.trim(),
-      pattern: object.pattern,
+      pattern,
       citationCount: basis.citationCount,
       latestSurveyDate: basis.latestSurveyDate,
       model,
     });
 
-    return { ccn, summary: object.summary.trim(), pattern: object.pattern, model, cached: false };
-  },
+    return { ccn, summary: object.summary.trim(), pattern, model, cached: false };
+}
+
+/** On view. Regenerates only when the stored summary is stale. */
+export const summarizeFacilityRisk = action({
+  args: { ccn: v.string() },
+  returns: riskSummaryResult,
+  handler: async (ctx, { ccn }): Promise<RiskSummaryResult> =>
+    runRiskSummary(ctx, ccn, false, await getAuthUserId(ctx)),
+});
+
+/** Rewrite one facility's summary regardless of the cache. Operators only. */
+export const regenerateRiskSummary = internalAction({
+  args: { ccn: v.string() },
+  returns: riskSummaryResult,
+  handler: async (ctx, { ccn }): Promise<RiskSummaryResult> =>
+    runRiskSummary(ctx, ccn, true, null),
 });
 
 // =============================================================================
@@ -807,11 +877,19 @@ export const facilityDetail = query({
       riskSummary: summaryRow
         ? {
             summary: summaryRow.summary,
-            pattern: summaryRow.pattern,
+            // Held to the counts on the same card even before the stored row
+            // is rewritten, so the label can never read "No harm on record"
+            // above a finding that harmed a resident.
+            pattern: reconcileRiskPattern(
+              summaryRow.pattern,
+              counts.actualHarm + counts.immediateJeopardy,
+            ),
             model: summaryRow.model,
-            stale:
-              summaryRow.citationCount !== rows.length ||
-              summaryRow.latestSurveyDate !== latestSurveyDate,
+            stale: riskSummaryIsStale(summaryRow, {
+              citationCount: rows.length,
+              latestSurveyDate,
+              harmFindings: counts.actualHarm + counts.immediateJeopardy,
+            }),
           }
         : null,
     };

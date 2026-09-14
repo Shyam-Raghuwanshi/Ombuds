@@ -49,6 +49,34 @@ export function isValidScopeSeverity(code: string): boolean {
   return code.trim().toUpperCase() in HARM_BY_LETTER;
 }
 
+export type RiskPattern =
+  | "clean"
+  | "isolated_incident"
+  | "improving"
+  | "recurring"
+  | "severe_recurring";
+
+/**
+ * Hold the model's one-word pattern to the record it was written from.
+ *
+ * The pattern is shown as a label beside a real facility's name, so it is a
+ * claim, and a model-chosen label must not contradict the federal counts on the
+ * same card. It did: a facility with an actual-harm fall was labelled "clean",
+ * which the screen renders as "No harm on record". The counts are the record;
+ * the label follows them.
+ */
+export function reconcileRiskPattern(
+  pattern: RiskPattern,
+  harmFindings: number,
+): RiskPattern {
+  if (harmFindings > 0 && pattern === "clean") {
+    return harmFindings === 1 ? "isolated_incident" : "severe_recurring";
+  }
+  if (harmFindings === 0 && pattern === "severe_recurring") return "recurring";
+  if (harmFindings === 0 && pattern === "isolated_incident") return "clean";
+  return pattern;
+}
+
 /** Rank for sorting worst-first. */
 export const HARM_RANK: Record<HarmLevel, number> = {
   minimal: 0,

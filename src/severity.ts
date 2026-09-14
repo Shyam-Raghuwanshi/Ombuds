@@ -40,7 +40,9 @@ export const SPREAD_LABEL: Record<string, string> = {
 
 export const PATTERN_LABEL: Record<string, string> = {
   clean: "No harm on record",
-  isolated_incident: "One incident, corrected",
+  // Not "corrected": the label sits beside the record, and whether a finding
+  // was corrected is a date the record states, not something a label assumes.
+  isolated_incident: "One harm finding, not repeated",
   improving: "Improving",
   recurring: "Repeating failures",
   severe_recurring: "Repeating failures with harm",
