@@ -136,7 +136,12 @@ export function ContactPanel({ ccn }: { ccn: string }) {
               {phone}
             </a>
           </dd>
-          <Provenance>Federal record, CMS Provider Data Catalog.</Provenance>
+          {/* A <dd>, not a <p>: a description list may only hold terms and
+              descriptions, and a screen reader reads the source as part of
+              the phone number it describes. */}
+          <dd className="t-meta measure mt-1.5">
+            Federal record, CMS Provider Data Catalog.
+          </dd>
         </div>
 
         {card.contactStatus === "discovered" && card.contactEmail && (
@@ -147,7 +152,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
                 {card.contactEmail}
               </a>
             </dd>
-            <Provenance>
+            <dd className="t-meta measure mt-1.5">
               Found on{" "}
               <a
                 href={card.contactSourceUrl ?? card.website ?? "#"}
@@ -159,7 +164,7 @@ export function ContactPanel({ ccn }: { ccn: string }) {
               </a>
               {card.enrichedAt ? ` on ${fmtDate(card.enrichedAt)}` : ""}. This is
               the facility's own published address, not a referral service.
-            </Provenance>
+            </dd>
           </div>
         )}
       </dl>
