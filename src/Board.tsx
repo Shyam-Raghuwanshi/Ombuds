@@ -552,12 +552,18 @@ export function Board({
         </p>
 
         {/* Where the campaign is writing from. A fact a judge should be able
-            to check on screen rather than take on trust. */}
+            to check on screen rather than take on trust.
+
+            The shared case used to blame the AgentMail plan. That was true
+            while the plan capped the organisation at three inboxes; with the
+            cap raised, a search only lands here when provisioning fails for
+            some other reason, and naming the plan would state a cause we no
+            longer know to be the cause. */}
         <p className="t-body mt-2 text-muted">
           Writing from{" "}
           <span className="font-semibold text-ink">{search.inboxEmail}</span>
           {search.inboxMode === "shared"
-            ? " — a shared inbox, because this AgentMail plan issues one"
+            ? " — a shared inbox, because AgentMail could not issue this search its own"
             : " — this search's own inbox"}
         </p>
 
