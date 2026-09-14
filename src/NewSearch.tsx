@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { Empty, ErrorState, Loading } from "./ui";
@@ -121,7 +122,10 @@ export default function NewSearch({
       .catch((e) => {
         console.error("startSearchNearZip failed", e);
         setError(
-          "We could not start that search just now. This is our backend rather than your connection — trying again usually works.",
+          // A limit explains itself; anything else gets the general sentence.
+          e instanceof ConvexError && typeof e.data === "string"
+            ? e.data
+            : "We could not start that search just now. This is our backend rather than your connection — trying again usually works.",
         );
       })
       .finally(() => setBusy(false));

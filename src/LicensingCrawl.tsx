@@ -151,16 +151,22 @@ export function LicensingCrawl() {
   const [crawlId, setCrawlId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the button showed a crawl that already ran today instead of
+  // paying for the same pages again.
+  const [reusedAt, setReusedAt] = useState<number | null>(null);
 
   const activeCrawlId = crawlId ?? latest?.crawlId ?? null;
 
   async function run() {
     setStarting(true);
     setError(null);
+    setReusedAt(null);
     try {
       const result = await start({ state: STATE });
-      if (result.ok && result.crawlId) setCrawlId(result.crawlId);
-      else setError(result.error);
+      if (result.ok && result.crawlId) {
+        setCrawlId(result.crawlId);
+        setReusedAt(result.reused ? result.startedAt : null);
+      } else setError(result.error);
     } catch (e) {
       console.error("crawl failed to start", e);
       setError(
@@ -202,6 +208,15 @@ export function LicensingCrawl() {
       >
         {starting ? "Starting the crawl…" : "Crawl the state register now"}
       </button>
+
+      {reusedAt !== null && (
+        <Provenance>
+          This register was already crawled on {fmtDate(reusedAt)}, so the
+          results below are from that crawl rather than a new one. A state
+          register is read at most once a day — it changes on the state's
+          schedule, and every page read costs a credit.
+        </Provenance>
+      )}
 
       {error && (
         <div className="mt-3 max-w-3xl">

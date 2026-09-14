@@ -1,5 +1,6 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { allow, busyMessage } from "./limits";
 import {
   action,
   internalAction,
@@ -115,8 +116,15 @@ export const findSampleSearch = internalQuery({
  * row does: a search without a mailbox is a search that can never ask anyone
  * anything.
  */
-export const createSearch = action({
+//
+// Internal, and handed the user id by the caller. As a public action it opened
+// an AgentMail inbox per distinct label on every call, so one anonymous token
+// could exhaust the organisation's inbox allowance in a loop. The two entry
+// points that create searches — the cold open and a family's own ZIP — check
+// the caller and the rate limits before they get here.
+export const createSearch = internalAction({
   args: {
+    userId: v.id("users"),
     label: v.string(),
     zip: v.string(),
     radiusMiles: v.optional(v.number()),
@@ -130,18 +138,25 @@ export const createSearch = action({
     inboxEmail: v.string(),
     inboxMode: v.string(),
   }),
-  handler: async (ctx, args): Promise<{
+  handler: async (ctx, { userId, ...args }): Promise<{
     searchId: Id<"searches">;
     inboxEmail: string;
     inboxMode: string;
   }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("not signed in");
-
     // One inbox per search. The purpose key is per-user-and-label rather than
     // per-search-id, because the search row does not exist yet and a re-run of
     // the same search should reuse the mailbox it already has.
-    const slug = args.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20);
+    //
+    // The label becomes part of an email address, so a label of nothing but
+    // punctuation must still produce a valid username rather than
+    // "ombuds---abc123", which AgentMail refuses.
+    const slug =
+      args.label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+/, "")
+        .slice(0, 20)
+        .replace(/-+$/, "") || "search";
     const inbox = await provisionInbox(ctx, {
       purpose: `search:${userId}:${slug}`,
       username: `ombuds-${slug}-${userId.slice(-6)}`,
@@ -486,12 +501,17 @@ export const runCampaign = internalAction({
   },
 });
 
-export const startCampaign = action({
+/**
+ * Start a campaign on an existing search, for operators.
+ *
+ * Internal: it takes an arbitrary list of CCNs, and every one with an address
+ * is a real send and a parsed reply. The two public doors — the cold open and
+ * a family's own ZIP — choose the shortlist themselves.
+ */
+export const startCampaign = internalAction({
   args: { searchId: v.id("searches"), ccns: v.array(v.string()) },
   returns: v.object({ queued: v.number(), noEmail: v.number() }),
   handler: async (ctx, { searchId, ccns }): Promise<{ queued: number; noEmail: number }> => {
-    const owned: boolean = await ctx.runQuery(api.searches.ownsSearch, { searchId });
-    if (!owned) throw new Error("not your search");
     return ctx.runAction(internal.searches.runCampaign, { searchId, ccns });
   },
 });
@@ -517,9 +537,21 @@ export const runSampleSearch = action({
     );
     if (existing) return { searchId: existing, started: false };
 
+    // A new sample search opens an inbox and starts about seven real sends. A
+    // returning visitor never reaches this line; a script minting anonymous
+    // visitors does, so the bound is global rather than per visitor.
+    const budget = await allow(ctx, null, [
+      { name: "campaignGlobal" },
+      { name: "campaignDaily" },
+    ]);
+    if (!budget.ok) {
+      throw new ConvexError(busyMessage("sample searches", budget.retryAfter));
+    }
+
     const created: { searchId: Id<"searches"> } = await ctx.runAction(
-      api.searches.createSearch,
+      internal.searches.createSearch,
       {
+        userId,
         label: SAMPLE_LABEL,
         zip: "91767",
         radiusMiles: 25,

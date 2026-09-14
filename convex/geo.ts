@@ -1,13 +1,17 @@
 import { v } from "convex/values";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   query,
 } from "./_generated/server";
 import { components, internal, api } from "./_generated/api";
 import { GeospatialIndex } from "@convex-dev/geospatial";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { allow, busyMessage } from "./limits";
 
 /**
  * "Homes near me", which is the question a family actually arrives with.
@@ -202,7 +206,7 @@ export const clearZipCentroids = internalMutation({
  * Run after a full CMS ingest. Clears first, then rebuilds, both chained
  * through the scheduler.
  */
-export const rebuildZipIndex = action({
+export const rebuildZipIndex = internalAction({
   args: {},
   returns: v.object({ started: v.boolean() }),
   handler: async (ctx): Promise<{ started: boolean }> => {
@@ -347,7 +351,9 @@ export const facilitiesNearZip = query({
     facilities: v.array(nearbyRow),
   }),
   handler: async (ctx, { zip, radiusMiles, limit }): Promise<NearbyResult> => {
-    const radius = radiusMiles ?? 25;
+    // Bounded, because both numbers come from the browser and set how much the
+    // spatial index and the facility table are asked to read.
+    const radius = Math.min(100, Math.max(1, radiusMiles ?? 25));
     const origin: ZipOrigin | null = await ctx.runQuery(
       internal.geo.resolveZip,
       { zip },
@@ -358,7 +364,7 @@ export const facilitiesNearZip = query({
     // ordered and already bounded by distance, so nothing here reads a row it
     // is not going to return — which is the difference between this and
     // scanning a latitude band and throwing most of it away.
-    const want = limit ?? 60;
+    const want = Math.min(60, Math.max(1, limit ?? 60));
     const nearest = await facilityIndex.queryNearest(
       ctx,
       { latitude: origin.latitude, longitude: origin.longitude },
@@ -444,9 +450,27 @@ export const startSearchNearZip = action({
     matched: number;
     reason: string;
   }> => {
-    const radius = args.radiusMiles ?? 25;
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("not signed in");
+
+    // Every one of these is echoed onto the board, into an export, and — for
+    // the label — into an inbox address, so none of them is unbounded.
+    const zip = args.zip.trim().slice(0, 5);
+    const label = args.label.trim().slice(0, 60) || "My search";
+    const radius = Math.min(100, Math.max(1, args.radiusMiles ?? 25));
+    const mustHaves = (args.mustHaves ?? [])
+      .map((m) => m.trim().slice(0, 60))
+      .filter(Boolean)
+      .slice(0, 8);
+    const budgetMax =
+      args.budgetMax !== undefined &&
+      Number.isFinite(args.budgetMax) &&
+      args.budgetMax > 0
+        ? Math.min(Math.round(args.budgetMax), 1_000_000)
+        : undefined;
+
     const near: NearbyResult = await ctx.runQuery(api.geo.facilitiesNearZip, {
-      zip: args.zip,
+      zip,
       radiusMiles: radius,
       limit: CAMPAIGN_SIZE,
     });
@@ -460,15 +484,28 @@ export const startSearchNearZip = action({
       return { searchId: null, matched: 0, reason: "none_in_radius" };
     }
 
+    // Counted once the ZIP has resolved, so a mistyped code never uses a try.
+    // A campaign opens an inbox, pays Firecrawl for up to twelve lookups, and
+    // sends real mail, so it is bounded per visitor and for everyone at once.
+    const budget = await allow(ctx, userId, [
+      { name: "campaignPerUser", perUser: true },
+      { name: "campaignGlobal" },
+      { name: "campaignDaily" },
+    ]);
+    if (!budget.ok) {
+      throw new ConvexError(busyMessage("searches", budget.retryAfter));
+    }
+
     const created: { searchId: Id<"searches"> } = await ctx.runAction(
-      api.searches.createSearch,
+      internal.searches.createSearch,
       {
-        label: args.label,
-        zip: args.zip,
+        userId,
+        label,
+        zip,
         radiusMiles: radius,
         careLevel: args.careLevel,
-        budgetMax: args.budgetMax,
-        mustHaves: args.mustHaves ?? [],
+        budgetMax,
+        mustHaves,
         isSample: false,
       },
     );
@@ -480,7 +517,7 @@ export const startSearchNearZip = action({
     // Firecrawl has been out on the open web there is no address to write to
     // (CLAUDE.md section 4). Queued rather than awaited — it runs through the
     // bounded enrichment pool while the board is already on screen.
-    await ctx.runMutation(api.enrichment.enrichBatch, { ccns });
+    await ctx.runMutation(internal.enrichment.queueDiscovery, { ccns, userId });
 
     // The campaign does not wait for it. Rows and inspection records land in
     // about a second; the letters go to whichever facilities are already
@@ -562,7 +599,7 @@ export const indexFacilityPage = internalMutation({
 });
 
 /** Build the spatial index from the current facility table. */
-export const rebuildSpatialIndex = action({
+export const rebuildSpatialIndex = internalAction({
   args: {},
   returns: v.object({ started: v.boolean() }),
   handler: async (ctx): Promise<{ started: boolean }> => {

@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { z } from "zod";
 import { Workpool } from "@convex-dev/workpool";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
-import type { ActionCtx } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -12,6 +13,7 @@ import {
   query,
 } from "./_generated/server";
 import { components, internal } from "./_generated/api";
+import { allow, busyMessage } from "./limits";
 import {
   describeFirecrawlError,
   isFatalForBatch,
@@ -291,6 +293,30 @@ function normalizeHits(response: unknown): SearchHit[] {
   return out;
 }
 
+/**
+ * Whether a discovery run for this facility would only repeat one we already did.
+ *
+ * Every settled outcome counts, not just a found address. Counting only
+ * `discovered` as fresh meant a facility with no website, or no address on its
+ * website, was searched, mapped and scraped again on every view of it and in
+ * every new search that included it — paying Firecrawl each time to learn the
+ * same nothing. `failed` and `pending` have not settled, so they may run again.
+ */
+export function isDiscoveryFresh(
+  facility: { enrichedAt?: number; contactStatus?: string },
+  now: number,
+): boolean {
+  const settled =
+    facility.contactStatus === "discovered" ||
+    facility.contactStatus === "no_website_found" ||
+    facility.contactStatus === "no_email_found";
+  return (
+    settled &&
+    facility.enrichedAt !== undefined &&
+    now - facility.enrichedAt < REDISCOVER_AFTER_MS
+  );
+}
+
 export type EnrichmentResult = {
   ccn: string;
   status:
@@ -317,12 +343,7 @@ async function runEnrichment(
   const target = await ctx.runQuery(internal.enrichment.enrichmentTarget, { ccn });
   if (!target) return { ccn, status: "not_found", scrapesUsed: 0 };
 
-  const fresh =
-    !force &&
-    target.enrichedAt !== undefined &&
-    Date.now() - target.enrichedAt < REDISCOVER_AFTER_MS &&
-    target.contactStatus === "discovered";
-  if (fresh) {
+  if (!force && isDiscoveryFresh(target, Date.now())) {
     return {
       ccn,
       status: "skipped_fresh",
@@ -544,12 +565,39 @@ const enrichmentResultValidator = v.object({
   errorCode: v.optional(v.string()),
 });
 
-/** Discovery for one facility. Called on view, the way translation is. */
+/**
+ * Discovery for one facility. Called on view, the way translation is.
+ *
+ * There is no `force` from the browser, and a facility already checked this
+ * week is answered from what we found then. Only a run that will actually reach
+ * Firecrawl is counted against the limits.
+ */
 export const enrichFacility = action({
-  args: { ccn: v.string(), force: v.optional(v.boolean()) },
+  args: { ccn: v.string() },
   returns: enrichmentResultValidator,
-  handler: async (ctx, { ccn, force }): Promise<EnrichmentResult> =>
-    await runEnrichment(ctx, ccn, force ?? false, 0),
+  handler: async (ctx, { ccn }): Promise<EnrichmentResult> => {
+    const target = await ctx.runQuery(internal.enrichment.enrichmentTarget, { ccn });
+    if (!target) return { ccn, status: "not_found", scrapesUsed: 0 };
+    if (!isDiscoveryFresh(target, Date.now())) {
+      const budget = await allow(ctx, await getAuthUserId(ctx), [
+        { name: "discoveryPerUser", perUser: true },
+        { name: "discoveryGlobal" },
+        { name: "discoveryDaily" },
+      ]);
+      if (!budget.ok) {
+        // Returned, not written onto the facility: it describes how busy we
+        // are, not the facility, and every other visitor reads that row.
+        return {
+          ccn,
+          status: "failed",
+          scrapesUsed: 0,
+          error: busyMessage("facility lookups", budget.retryAfter),
+          errorCode: "rate_limited",
+        };
+      }
+    }
+    return await runEnrichment(ctx, ccn, false, 0);
+  },
 });
 
 /** The workpool and the scheduler both enter here. */
@@ -564,23 +612,64 @@ export const enrichFacilityWorker = internalAction({
     await runEnrichment(ctx, ccn, force ?? false, attempt ?? 0),
 });
 
+/** One board's worth. Nothing in the product asks for more at once. */
+const MAX_DISCOVERY_BATCH = 12;
+
 /**
- * Fan discovery out across a shortlist through the bounded pool, so fifteen
- * facilities never become fifteen simultaneous Firecrawl requests.
+ * Queue discovery for the facilities on a shortlist that actually need it.
+ *
+ * Decided here, before anything is queued: a facility checked this week is
+ * skipped, and each one that will reach Firecrawl is counted against the limits
+ * individually, so a visitor near their allowance still gets the first few
+ * rather than none.
  */
+async function queueStaleDiscovery(
+  ctx: MutationCtx,
+  ccns: string[],
+  userId: string | null,
+): Promise<{ queued: number }> {
+  const now = Date.now();
+  let queued = 0;
+  for (const ccn of [...new Set(ccns)].slice(0, MAX_DISCOVERY_BATCH)) {
+    const facility = await ctx.db
+      .query("facilities")
+      .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
+      .unique();
+    if (!facility || isDiscoveryFresh(facility, now)) continue;
+
+    const budget = await allow(ctx, userId, [
+      { name: "discoveryPerUser", perUser: true },
+      { name: "discoveryGlobal" },
+      { name: "discoveryDaily" },
+    ]);
+    if (!budget.ok) break;
+
+    // Fanned through the bounded pool, so a shortlist never becomes a dozen
+    // simultaneous Firecrawl requests.
+    await enrichmentPool.enqueueAction(
+      ctx,
+      internal.enrichment.enrichFacilityWorker,
+      { ccn, force: false, attempt: 0 },
+    );
+    queued += 1;
+  }
+  return { queued };
+}
+
+/** From the browser: the comparison on the front page asks for its three. */
 export const enrichBatch = mutation({
-  args: { ccns: v.array(v.string()), force: v.optional(v.boolean()) },
+  args: { ccns: v.array(v.string()) },
   returns: v.object({ queued: v.number() }),
-  handler: async (ctx, { ccns, force }) => {
-    for (const ccn of [...new Set(ccns)]) {
-      await enrichmentPool.enqueueAction(
-        ctx,
-        internal.enrichment.enrichFacilityWorker,
-        { ccn, force: force ?? false, attempt: 0 },
-      );
-    }
-    return { queued: new Set(ccns).size };
-  },
+  handler: async (ctx, { ccns }) =>
+    queueStaleDiscovery(ctx, ccns, await getAuthUserId(ctx)),
+});
+
+/** From a family's own search, which has already checked who is asking. */
+export const queueDiscovery = internalMutation({
+  args: { ccns: v.array(v.string()), userId: v.union(v.string(), v.null()) },
+  returns: v.object({ queued: v.number() }),
+  handler: async (ctx, { ccns, userId }) =>
+    queueStaleDiscovery(ctx, ccns, userId),
 });
 
 // =============================================================================
@@ -672,7 +761,8 @@ export const enrichmentStatus = query({
       failed: 0,
       lastError: null as string | null,
     };
-    for (const ccn of [...new Set(ccns)]) {
+    // Bounded: the list comes from the browser, and each entry is a read.
+    for (const ccn of [...new Set(ccns)].slice(0, 24)) {
       const f = await ctx.db
         .query("facilities")
         .withIndex("by_ccn", (q) => q.eq("ccn", ccn))

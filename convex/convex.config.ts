@@ -7,6 +7,7 @@ import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 import geospatial from "@convex-dev/geospatial/convex.config";
 import workpool from "@convex-dev/workpool/convex.config";
+import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 
 // App-owned root routing: `convex/http.ts` keeps the root, so the Convex Auth
 // routes and the AgentMail webhook live at stable URLs. Static hosting is
@@ -54,5 +55,10 @@ app.use(geospatial);
 app.use(workpool, { name: "inquiryPool" });
 // Separate pool so Firecrawl enrichment never queues behind outbound email.
 app.use(workpool, { name: "enrichmentPool" });
+
+// Anonymous sign-in means "signed in" costs nothing to obtain, so every public
+// entry point that spends money — a model call, a Firecrawl credit, an email —
+// is bounded per visitor and globally (convex/limits.ts).
+app.use(rateLimiter);
 
 export default app;

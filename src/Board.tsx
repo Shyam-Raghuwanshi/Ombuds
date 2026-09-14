@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { fmtDate } from "./severity";
@@ -725,7 +726,9 @@ function ExportBoard({ searchId }: { searchId: Id<"searches"> }) {
       .catch((e) => {
         console.error("board export failed", e);
         setError(
-          "We could not build that file just now. Nothing on the board has changed — trying again usually works.",
+          e instanceof ConvexError && typeof e.data === "string"
+            ? e.data
+            : "We could not build that file just now. Nothing on the board has changed — trying again usually works.",
         );
       })
       .finally(() => setBusy(false));

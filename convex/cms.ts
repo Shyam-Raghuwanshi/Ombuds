@@ -1,7 +1,12 @@
 import { v } from "convex/values";
 import type { ActionCtx } from "./_generated/server";
+/**
+ * Every entry point in this file is internal. They re-ingest federal data,
+ * cost nothing per call in model spend, and are still not something a visitor
+ * should be able to start: a full ingest is 14,690 upserts. Operators run them
+ * with `npx convex run cms:<name>` (see `npm run seed:demo`).
+ */
 import {
-  action,
   internalAction,
   internalMutation,
   internalQuery,
@@ -115,7 +120,7 @@ const optBool = (row: CmsRow, key: string): boolean | undefined => {
  * ("...provides adequate supervision to prevent acc"). The look-up table has
  * the real wording. 643 rows, static, no LLM. CLAUDE.md section 6, fact 3.
  */
-export const syncTagCatalog = action({
+export const syncTagCatalog = internalAction({
   args: {},
   returns: v.object({ fetched: v.number(), written: v.number() }),
   handler: async (ctx): Promise<{ fetched: number; written: number }> => {
@@ -225,7 +230,7 @@ export const upsertFacility = internalMutation({
  * "CMS published no rating", not "rated zero". The UI must say so rather than
  * drawing an empty star bar.
  */
-export const ingestFacility = action({
+export const ingestFacility = internalAction({
   args: { ccn: v.string() },
   returns: v.object({ ccn: v.string(), name: v.string(), found: v.boolean() }),
   handler: async (ctx, { ccn }) => await pullFacility(ctx, ccn),
@@ -441,7 +446,7 @@ const newHarmValidator = v.array(
   }),
 );
 
-export const ingestDeficiencies = action({
+export const ingestDeficiencies = internalAction({
   args: { ccn: v.string() },
   returns: v.object({
     ccn: v.string(),
@@ -517,7 +522,7 @@ async function pullDeficiencies(
 }
 
 /** Facility + its whole citation history, in one call. */
-export const ingestFacilityByCcn = action({
+export const ingestFacilityByCcn = internalAction({
   args: { ccn: v.string() },
   returns: v.object({
     ccn: v.string(),
@@ -663,7 +668,7 @@ export const ingestAllFacilities = internalAction({
  * Deliberately not awaited to completion: fifteen chained pages take a few
  * minutes, which is longer than any caller should hold a connection open for.
  */
-export const startFullIngest = action({
+export const startFullIngest = internalAction({
   args: {},
   returns: v.object({ started: v.boolean() }),
   handler: async (ctx): Promise<{ started: boolean }> => {

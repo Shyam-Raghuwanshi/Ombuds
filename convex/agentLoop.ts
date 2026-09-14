@@ -1,15 +1,13 @@
 import { v } from "convex/values";
 import { z } from "zod";
 import { Agent, createTool, type ToolCtx } from "@convex-dev/agent";
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { stepCountIs } from "ai";
 import {
-  action,
   internalAction,
   internalMutation,
   internalQuery,
 } from "./_generated/server";
-import { api, components, internal } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeUsage, resolveModel } from "./ai/provider";
 import { careLevelPhrase } from "./lib/questions";
@@ -662,7 +660,11 @@ export const setAgentThread = internalMutation({
  * It is a separate entry point rather than part of the reply loop because it is
  * worth paying for once, when a family asks, rather than after every reply.
  */
-export const rankSearch = action({
+//
+// Internal: nothing in the product calls it yet, and a public action that pays
+// for an agent turn on every call is a cost anyone could run up. Operators run
+// it with `npx convex run agentLoop:rankSearch`.
+export const rankSearch = internalAction({
   args: { searchId: v.id("searches") },
   returns: v.object({
     ranked: v.boolean(),
@@ -673,9 +675,6 @@ export const rankSearch = action({
     ctx,
     { searchId },
   ): Promise<{ ranked: boolean; reason: string; summary?: string }> => {
-    const owned: boolean = await ctx.runQuery(api.searches.ownsSearch, { searchId });
-    if (!owned) throw new Error("not your search");
-
     const { threadId } = await ombuds.createThread(ctx, {
       title: `Ranking — search ${searchId}`,
     });
@@ -723,7 +722,11 @@ export const rankSearch = action({
  * list. Same path the agent's `sendInquiry` tool takes, same send guard, same
  * letter.
  */
-export const contactFacility = action({
+//
+// Internal until the product has a button for it. As a public action each call
+// queued a real send and a parsed reply against any facility, with nothing but
+// ownership of a free anonymous search standing in the way.
+export const contactFacility = internalAction({
   args: { searchId: v.id("searches"), ccn: v.string() },
   returns: v.object({
     queued: v.boolean(),
@@ -740,10 +743,6 @@ export const contactFacility = action({
     facilityName?: string;
     inquiryId?: Id<"inquiries">;
   }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("not signed in");
-    const owned: boolean = await ctx.runQuery(api.searches.ownsSearch, { searchId });
-    if (!owned) throw new Error("not your search");
     return await ctx.runAction(internal.email.sendInquiryToFacility, {
       searchId,
       ccn,

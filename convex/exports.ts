@@ -1,7 +1,9 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { HARM_RANK } from "./lib/severity";
+import { allow, busyMessage } from "./limits";
 
 /**
  * The shortlist, as a file the family keeps.
@@ -97,6 +99,15 @@ export const boardCsv = action({
     // never needs to re-check and can never disagree with the screen.
     const board = await ctx.runQuery(api.searches.board, { searchId });
     if (!board) return null;
+
+    // Each export writes a new file to storage. Counted after ownership is
+    // proven, so nobody else's attempts can use up a family's downloads.
+    const budget = await allow(ctx, await getAuthUserId(ctx), [
+      { name: "exportPerUser", perUser: true },
+    ]);
+    if (!budget.ok) {
+      throw new ConvexError(busyMessage("downloads", budget.retryAfter));
+    }
 
     const generatedAt = new Date();
     const lines: string[] = [];

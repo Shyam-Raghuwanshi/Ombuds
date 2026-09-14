@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -83,7 +84,10 @@ function ColdOpen({
       .catch((e) => {
         console.error("sample search failed", e);
         setError(
-          "We could not open the sample search just now. This is our backend, not your connection — pressing the button again usually works.",
+          // A limit explains itself; anything else gets the general sentence.
+          e instanceof ConvexError && typeof e.data === "string"
+            ? e.data
+            : "We could not open the sample search just now. This is our backend, not your connection — pressing the button again usually works.",
         );
       })
       .finally(() => setBusy(false));

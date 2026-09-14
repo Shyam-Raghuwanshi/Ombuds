@@ -10,6 +10,7 @@ import {
 } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { describeFirecrawlError } from "./lib/firecrawlErrors";
+import { allow, busyMessage } from "./limits";
 import {
   STATE_PORTALS,
   extractLicensedRows,
@@ -74,10 +75,36 @@ export const recordCrawlStarted = internalMutation({
     }),
 });
 
+/**
+ * How long a state's register is left alone after a crawl starts.
+ *
+ * A licensing register is republished on the state's schedule, not ours, and a
+ * crawl costs about twenty Firecrawl credits. The button on the front page is
+ * public, so without this every visitor who pressed it would pay for the same
+ * twenty pages again. Within the window, pressing it shows the crawl that
+ * already ran rather than starting another.
+ */
+const CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+export const latestCrawlRow = internalQuery({
+  args: { state: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({ crawlId: v.string(), startedAt: v.number() }),
+  ),
+  handler: async (ctx, { state }) => {
+    const row = await ctx.db
+      .query("licensingCrawls")
+      .withIndex("by_state", (q) => q.eq("state", state))
+      .order("desc")
+      .first();
+    return row ? { crawlId: row.crawlId, startedAt: row.startedAt } : null;
+  },
+});
+
 export const startStateCrawl = action({
   args: {
     state: portalKeys,
-    mode: v.optional(v.union(v.literal("webhook"), v.literal("poll"))),
   },
   returns: v.object({
     ok: v.boolean(),
@@ -86,6 +113,9 @@ export const startStateCrawl = action({
     portalName: v.string(),
     mode: v.string(),
     error: v.union(v.string(), v.null()),
+    // True when a recent crawl was shown instead of starting a new one.
+    reused: v.boolean(),
+    startedAt: v.union(v.number(), v.null()),
   }),
   handler: async (
     ctx,
@@ -97,9 +127,41 @@ export const startStateCrawl = action({
     portalName: string;
     mode: string;
     error: string | null;
+    reused: boolean;
+    startedAt: number | null;
   }> => {
     const portal = STATE_PORTALS[args.state as PortalKey];
-    const mode = args.mode ?? defaultMode();
+    const mode = defaultMode();
+
+    const latest = await ctx.runQuery(internal.licensing.latestCrawlRow, {
+      state: portal.state,
+    });
+    if (latest && Date.now() - latest.startedAt < CRAWL_COOLDOWN_MS) {
+      return {
+        ok: true,
+        crawlId: latest.crawlId,
+        state: portal.state,
+        portalName: portal.portalName,
+        mode,
+        error: null,
+        reused: true,
+        startedAt: latest.startedAt,
+      };
+    }
+
+    const budget = await allow(ctx, null, [{ name: "crawlDaily" }]);
+    if (!budget.ok) {
+      return {
+        ok: false,
+        crawlId: null,
+        state: portal.state,
+        portalName: portal.portalName,
+        mode,
+        error: busyMessage("state register crawls", budget.retryAfter),
+        reused: false,
+        startedAt: null,
+      };
+    }
 
     try {
       const { crawlId, jobId } = await firecrawl.startCrawl(ctx, {
@@ -146,6 +208,8 @@ export const startStateCrawl = action({
         portalName: portal.portalName,
         mode,
         error: null,
+        reused: false,
+        startedAt: Date.now(),
       };
     } catch (error) {
       const failure = describeFirecrawlError(error);
@@ -156,6 +220,8 @@ export const startStateCrawl = action({
         portalName: portal.portalName,
         mode,
         error: failure.message,
+        reused: false,
+        startedAt: null,
       };
     }
   },

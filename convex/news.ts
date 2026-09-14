@@ -1,7 +1,16 @@
 import { v } from "convex/values";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
-import { action, internalMutation, internalQuery, query } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { components, internal } from "./_generated/api";
+import { allow, busyMessage } from "./limits";
 import { generateStructured } from "./ai/provider";
 import {
   FACILITY_NEWS_SYSTEM,
@@ -221,27 +230,50 @@ function yearToTimestamp(year: number | null): number {
   return Date.parse(`${year}-01-01T00:00:00Z`);
 }
 
+const scanResult = v.object({
+  ccn: v.string(),
+  searched: v.number(),
+  kept: v.number(),
+  inserted: v.number(),
+  skipped: v.boolean(),
+  error: v.union(v.string(), v.null()),
+});
+
+type ScanResult = {
+  ccn: string;
+  searched: number;
+  kept: number;
+  inserted: number;
+  skipped: boolean;
+  error: string | null;
+};
+
+/**
+ * Scan on view. The weekly rescan window is the server's decision, not the
+ * caller's: this action used to accept `force` from the browser, which let any
+ * visitor pay for a Firecrawl search and a large-model triage on every call.
+ */
 export const scanFacilityNews = action({
-  args: { ccn: v.string(), force: v.optional(v.boolean()) },
-  returns: v.object({
-    ccn: v.string(),
-    searched: v.number(),
-    kept: v.number(),
-    inserted: v.number(),
-    skipped: v.boolean(),
-    error: v.union(v.string(), v.null()),
-  }),
-  handler: async (
-    ctx,
-    { ccn, force },
-  ): Promise<{
-    ccn: string;
-    searched: number;
-    kept: number;
-    inserted: number;
-    skipped: boolean;
-    error: string | null;
-  }> => {
+  args: { ccn: v.string() },
+  returns: scanResult,
+  handler: async (ctx, { ccn }): Promise<ScanResult> =>
+    runNewsScan(ctx, ccn, false, await getAuthUserId(ctx)),
+});
+
+/** A rescan that ignores the weekly window. Operators only. */
+export const rescanFacilityNews = internalAction({
+  args: { ccn: v.string() },
+  returns: scanResult,
+  handler: async (ctx, { ccn }): Promise<ScanResult> =>
+    runNewsScan(ctx, ccn, true, null),
+});
+
+async function runNewsScan(
+  ctx: ActionCtx,
+  ccn: string,
+  force: boolean,
+  userId: string | null,
+): Promise<ScanResult> {
     const target = await ctx.runQuery(internal.news.newsScanTarget, { ccn });
     if (!target) {
       return { ccn, searched: 0, kept: 0, inserted: 0, skipped: true, error: null };
@@ -252,6 +284,25 @@ export const scanFacilityNews = action({
       Date.now() - target.newsScannedAt < RESCAN_AFTER_MS
     ) {
       return { ccn, searched: 0, kept: 0, inserted: 0, skipped: true, error: null };
+    }
+
+    // Counted only when a scan will actually run and cost something.
+    if (!force) {
+      const budget = await allow(ctx, userId, [
+        { name: "newsPerUser", perUser: true },
+        { name: "newsGlobal" },
+        { name: "newsDaily" },
+      ]);
+      if (!budget.ok) {
+        return {
+          ccn,
+          searched: 0,
+          kept: 0,
+          inserted: 0,
+          skipped: true,
+          error: busyMessage("local news searches", budget.retryAfter),
+        };
+      }
     }
 
     let hits: Hit[];
@@ -366,8 +417,7 @@ export const scanFacilityNews = action({
       skipped: false,
       error: null,
     };
-  },
-});
+}
 
 /**
  * Reactive read. `scanned` is deliberately separate from an empty list: "we

@@ -31,6 +31,7 @@ import type * as lib_questions from "../lib/questions.js";
 import type * as lib_sendGuard from "../lib/sendGuard.js";
 import type * as lib_severity from "../lib/severity.js";
 import type * as licensing from "../licensing.js";
+import type * as limits from "../limits.js";
 import type * as news from "../news.js";
 import type * as searches from "../searches.js";
 import type * as usage from "../usage.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "lib/sendGuard": typeof lib_sendGuard;
   "lib/severity": typeof lib_severity;
   licensing: typeof licensing;
+  limits: typeof limits;
   news: typeof news;
   searches: typeof searches;
   usage: typeof usage;
@@ -104,4 +106,5 @@ export declare const components: {
   geospatial: import("@convex-dev/geospatial/_generated/component.js").ComponentApi<"geospatial">;
   inquiryPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"inquiryPool">;
   enrichmentPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"enrichmentPool">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

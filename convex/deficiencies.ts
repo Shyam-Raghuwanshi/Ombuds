@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   action,
   internalAction,
@@ -7,8 +8,9 @@ import {
   internalQuery,
   query,
 } from "./_generated/server";
-import { api, internal } from "./_generated/api";
-import { generateStructured } from "./ai/provider";
+import type { ActionCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { generateStructured, modelTag } from "./ai/provider";
 import {
   DEFICIENCY_TRANSLATION_SYSTEM,
   FACILITY_RISK_SUMMARY_SYSTEM,
@@ -21,10 +23,13 @@ import {
   SPREAD_PHRASE,
   harmLevelFor,
   monthYear,
+  reconcileRiskPattern,
   spreadFor,
   type HarmLevel,
+  type RiskPattern,
   type Spread,
 } from "./lib/severity";
+import { allow } from "./limits";
 
 /**
  * Deficiency translation.
@@ -152,7 +157,12 @@ function buildPrompt(args: {
  * federal grid decides them, not us — so a caller-supplied `spread` is accepted
  * for convenience but the letter is authoritative if the two disagree.
  */
-export const translateDeficiency = action({
+//
+// Internal. It takes the requirement text from the caller and writes the model's
+// answer into the cache every facility in the country reads from, so as a
+// public action anyone could have chosen the words shown under a real
+// facility's name for any pair not yet cached — and paid for it with our key.
+export const translateDeficiency = internalAction({
   args: {
     tag: v.string(),
     tagDescription: v.string(),
@@ -319,6 +329,25 @@ export const translateFacility = action({
     const misses = pairs.filter(
       (p) => !cache[cacheKey(p.tag, p.scopeSeverity)],
     );
+
+    // Counted only when there is something to pay for. A facility whose every
+    // meaning is already cached — nearly all of them — is never limited.
+    if (misses.length > 0) {
+      const budget = await allow(ctx, await getAuthUserId(ctx), [
+        { name: "translatePerUser", perUser: true },
+        { name: "translatePairsGlobal", count: misses.length },
+      ]);
+      if (!budget.ok) {
+        // The rows stay in their "translating" state and the next view retries.
+        return {
+          ccn,
+          distinctPairs: pairs.length,
+          alreadyCached: pairs.length - misses.length,
+          translated: 0,
+          failed: misses.length,
+        };
+      }
+    }
 
     let translated = 0;
     let failed = 0;
@@ -827,7 +856,8 @@ export const cacheStats = query({
     // reuse is just as visible over the facilities being compared.
     let citationsCovered = 0;
     let citationsTotal = 0;
-    for (const ccn of [...new Set(ccns)]) {
+    // Bounded: the list comes from the browser, and each entry is a read.
+    for (const ccn of [...new Set(ccns)].slice(0, 24)) {
       const rows = await ctx.db
         .query("deficiencies")
         .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
@@ -900,7 +930,7 @@ export const clearTagTranslations = internalMutation({
  *
  *   npx convex run --prod deficiencies:resetTranslationCache '{}'
  */
-export const resetTranslationCache = action({
+export const resetTranslationCache = internalAction({
   args: { modelPrefix: v.optional(v.string()) },
   returns: v.object({ started: v.boolean() }),
   handler: async (ctx, { modelPrefix }): Promise<{ started: boolean }> => {
@@ -1014,7 +1044,7 @@ export const warmTranslationCache = internalAction({
     for (const pair of batch) {
       if (done >= cap) break;
       try {
-        await ctx.runAction(api.deficiencies.translateDeficiency, {
+        await ctx.runAction(internal.deficiencies.translateDeficiency, {
           tag: pair.tag,
           // The catalogue holds the untruncated federal wording; the citation
           // row's own copy is cut off mid-sentence (section 6, fact 3).
@@ -1052,7 +1082,7 @@ export const warmTranslationCache = internalAction({
 });
 
 /** Kick off the warm and return immediately; it chains through the scheduler. */
-export const startCacheWarm = action({
+export const startCacheWarm = internalAction({
   args: { budget: v.optional(v.number()) },
   returns: v.object({ started: v.boolean() }),
   handler: async (ctx, { budget }): Promise<{ started: boolean }> => {
