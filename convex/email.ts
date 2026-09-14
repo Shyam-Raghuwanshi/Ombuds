@@ -735,8 +735,16 @@ export const applyDelivery = internalMutation({
     const inquiry = await ctx.db.get(args.inquiryId);
     if (!inquiry) return null;
 
+    // Two sources report delivery — the webhook and `reconcileOutbound` reading
+    // the component — and they can arrive out of order. A late "sent" must not
+    // walk a row that already reads "delivered" backwards on the board.
+    const DELIVERY_RANK: Record<string, number> = { pending: 0, sent: 1 };
+    const current = inquiry.deliveryStatus;
+    const regresses =
+      current !== undefined &&
+      (DELIVERY_RANK[args.deliveryStatus] ?? 2) < (DELIVERY_RANK[current] ?? 2);
     const patch: Partial<Doc<"inquiries">> = {
-      deliveryStatus: args.deliveryStatus,
+      deliveryStatus: regresses ? current : args.deliveryStatus,
     };
     if (args.threadId) patch.threadId = args.threadId;
     if (args.messageId) patch.outboundMessageId = args.messageId;
