@@ -7,12 +7,12 @@
 - **Repo:** https://github.com/Shyam-Raghuwanshi/Ombuds
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://flexible-reindeer-206.convex.cloud
-- **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/geospatial, @convex-dev/workpool
+- **Components:** @convex-dev/agent, @agentmail/convex, @firecrawl/firecrawl-convex, @convex-dev/static-hosting, @convex-dev/geospatial, @convex-dev/workpool, @convex-dev/rate-limiter
 - **Convex features:** schema, tables, indexes, queries, mutations, internal queries, internal mutations, actions, internal actions, HTTP actions, crons, scheduled functions, pagination, realtime queries, paginated queries, file storage, components
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-14T08:38:03Z
+- **Last updated:** 2026-09-14T17:31:05Z
 
 ## Log
 
@@ -654,3 +654,49 @@ raised, a search lands there only when provisioning fails for another reason, so
 the copy now says what happened — AgentMail could not issue this search its own
 — rather than naming a cause we no longer know to be the cause
 (`src/Board.tsx`).
+
+### 2026-09-14 - 051aace
+Anonymous sign-in makes an identity free, so "signed in" was protecting nothing:
+any visitor could call the CMS ingest, the translation-cache reset, the index
+rebuilds, or an action that opened a new AgentMail inbox per call. Those are now
+internal, which took the public API from 47 functions to 33, and
+`translateDeficiency` no longer lets a caller choose the text written into the
+translation cache every facility reads. Everything a family's screen still needs
+that spends money — campaigns, contact discovery, news scans, uncached
+translations, risk summaries, exports — is bounded per visitor and globally
+through a seventh component, `@convex-dev/rate-limiter` (`convex/limits.ts`);
+cached work is never counted. State register crawls get a daily cap and a
+24-hour cooldown that shows the recent crawl instead of paying for the same
+pages. Discovery now treats "no website" and "no address" as settled for a week;
+before, those facilities were searched, mapped and scraped again on every view.
+
+The front page labelled one of its three facilities "No harm on record" directly
+under its actual-harm fall, because the model's pattern label was shown as-is.
+The label is now held to the harm counts on write and on read, and a summary
+written by a provider the product no longer runs on is rewritten on next view
+(`convex/lib/severity.ts`, `convex/deficiencies.ts`). A facility's full
+citation history now pages 25 at a time, newest inspection first, off a new
+`by_ccn_survey` index (`src/FacilityDetail.tsx`). Back from a facility opened on
+a board returns to the board. The repo has a README and an `.env.example` that
+names the variables the code actually reads.
+
+Verified against the live deployment: five cold opens run concurrently from
+fresh anonymous sessions each got a dedicated inbox, sent both in-thread
+follow-ups to the facility inbox, reached round two at 57–63 seconds, and
+settled with three openings and one bounce, at $0.08–$0.11 each. Stored
+citations for the three comparison facilities matched the CMS API row for row,
+including tag format, harm level, spread, and dates. Convex features: rate
+limiting, internal functions, indexes, paginated queries.
+
+### 2026-09-14 - e1f7b45
+The facility page now shows what CMS already computes and a star rating hides:
+Special Focus Facility status in words, fines, a change of ownership, weekend
+registered-nurse hours and staff turnover, each as published and omitted rather
+than shown as zero when CMS has no figure. The worst of the three comparison
+facilities turns out to be on CMS's Special Focus list with eight fines — a fact
+the product had ingested from the first day and never displayed
+(`src/FacilityDetail.tsx`). A weekly contact re-check that comes back empty no
+longer relabels a facility that still has the address it was found with
+(`convex/enrichment.ts`), and the contact panel's description list passes axe.
+Checked at 375px and 1280px in light and dark with no overflow, no axe
+violations and no console errors.
