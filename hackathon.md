@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-16T10:41:50Z
+- **Last updated:** 2026-09-16T17:33:34Z
 
 ## Log
 
@@ -757,3 +757,46 @@ homes at under two miles, correctly ordered ahead of Wasilla and Palmer. Twelve
 malformed inputs were rejected and real ZIP+4 still accepted. One limit stands:
 a well-formed ZIP that does not exist still resolves to its postal area rather
 than an error, which we cannot distinguish without a full ZIP table.
+
+### 2026-09-16 - 038ba91
+47300 is not a ZIP code, and Ombuds returned four nursing homes in Muncie for
+it. That prompted a measurement, and the measurement was worse than the bug.
+CMS publishes a coordinate for every facility and nothing about where a ZIP is,
+so we had inferred each ZIP from the facilities inside it and fallen back to the
+three-digit postal area otherwise. Against the real gazetteer: only 21.5% of the
+41,705 US ZIPs contain a certified facility, and the fallback placed the other
+75.5% a median of 20.8 miles from where they actually are — a third of all ZIPs
+off by more than the entire 25-mile search radius. The product's core claim is
+that it tells a family what is genuinely near them, so this was the claim
+failing, not an edge case.
+
+Loaded the gazetteer instead: every US ZIP and its coordinate from the GeoNames
+postal-code export, CC BY 4.0, 41,705 rows committed as
+`data/us-zip-locations.csv` and seeded by `npm run seed:zips`. `resolveZip` is
+now one indexed lookup on a new `zipLocations` table, exact everywhere, and a
+ZIP absent from it is reported as not a ZIP — the only way to tell a family they
+mistyped. All the guessing came out: the centroid builder, the three-digit
+fallback, the spread bound, the widened sweep, and the approximate-or-not branch
+every screen carried. `convex/geo.ts` went from 738 lines to 536
+(`convex/schema.ts`, `convex/geo.ts`, `src/NewSearch.tsx`). Convex features:
+indexed lookup, internal queries, paginated internal query, batch internal
+mutation.
+
+Two data traps worth recording. GeoNames' `US.txt` has no rows at all for Puerto
+Rico, the Virgin Islands, Guam, the Northern Marianas or American Samoa — those
+are separate downloads, and shipping only `US.txt` would have told every family
+in PR and Guam their ZIP does not exist while CMS certifies facilities in both.
+The territory files also put a numeric admin code where `US.txt` puts the state.
+Separately, the 511 overseas military APO/FPO ZIPs carry no state and a foreign
+coordinate; a first pass silently dropped them, and they are now kept so a
+search from one honestly finds nothing rather than being refused.
+
+Verified on the dev deployment against all 14,690 facilities and all 41,705
+ZIPs. 47300, 99999, 00000, 47301, 12346 and 98999 are refused; 31999 and 73301
+are real and resolve, the latter having been wrongly refused before. Anchorage
+3.2mi, Schenectady 1.5mi, Manhattan 1.4mi, San Juan 2.7mi, Barrigada 3.1mi. Six
+ZIPs CMS still lists were retired by USPS, including 02146, 02174 and 02181;
+their facilities stay reachable from the live ZIP that replaced them because the
+spatial index keys on coordinates rather than ZIPs — CARE ONE AT BROOKLINE shows
+at 1.1mi from 02445. Known gap: GeoNames omits PO-box-only ZIPs such as 91799,
+which are refused.
