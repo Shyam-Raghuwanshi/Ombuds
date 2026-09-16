@@ -42,6 +42,45 @@ export const facilityIndex = new GeospatialIndex<string, {}>(
 /** The spatial index speaks metres; every figure a family sees is in miles. */
 const METRES_PER_MILE = 1609.344;
 
+/**
+ * The one place that decides whether a string is a ZIP code.
+ *
+ * Validates the whole input and only then takes the first five digits. Doing
+ * it the other way round — slice, then test the slice — passes anything whose
+ * first five characters happen to be digits, so "91767x" and a pasted phone
+ * number both resolve to Pomona. ZIP+4 is accepted in both the forms the post
+ * office writes it; everything else is rejected rather than truncated into
+ * something plausible.
+ */
+export function normalizeZip(input: string): string | null {
+  const clean = input.trim();
+  if (!/^\d{5}(?:-?\d{4})?$/.test(clean)) return null;
+  return clean.slice(0, 5);
+}
+
+/**
+ * Great-circle distance in miles.
+ *
+ * Only used to measure how far apart the ZIPs inside one three-digit area sit.
+ * The radius search itself never comes through here — that is the S2 index's
+ * job, and it is both faster and more accurate than this.
+ */
+function milesBetween(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+): number {
+  const R = 3958.7613; // mean Earth radius, miles
+  const rad = Math.PI / 180;
+  const dLat = (b.latitude - a.latitude) * rad;
+  const dLon = (b.longitude - a.longitude) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.latitude * rad) *
+      Math.cos(b.latitude * rad) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 // =============================================================================
 // Building the ZIP index
 // =============================================================================
@@ -70,8 +109,8 @@ export const accumulateZipPage = internalMutation({
       // CMS publishes ZIP+4 for some rows and "" for a few. Only the leading
       // five digits identify the delivery area, and a row without them cannot
       // be placed on a map at all.
-      const zip = p.zip.trim().slice(0, 5);
-      if (zip.length !== 5 || !/^\d{5}$/.test(zip)) continue;
+      const zip = normalizeZip(p.zip);
+      if (zip === null) continue;
       // 0,0 is the Gulf of Guinea, and it is what CMS publishes when it has no
       // coordinate. Averaging it in would drag a ZIP's centre into the ocean.
       if (p.latitude === 0 && p.longitude === 0) continue;
@@ -227,15 +266,41 @@ export type ZipOrigin = {
   /** Whether we found the ZIP itself or fell back to its three-digit area. */
   precision: "zip" | "zip3";
   facilityCount: number;
+  /**
+   * How far the origin could be from where the family actually is, in miles.
+   *
+   * Zero for an exact ZIP. For the three-digit fallback it is the distance from
+   * the area centre to the furthest ZIP in that area — the honest upper bound
+   * on our error, since the typed ZIP could be any of them.
+   */
+  spreadMiles: number;
 };
+
+/**
+ * How far a three-digit area may be off before its centre stops standing in
+ * for a ZIP inside it.
+ *
+ * Most prefixes are small: 917 is a corner of Los Angeles County, and its
+ * centre is within a mile or two of any ZIP in it. A few are enormous — 995 is
+ * most of southcentral Alaska, and its centre sits at Kenai, 55 miles across
+ * Cook Inlet from downtown Anchorage. Below this threshold the centre is a
+ * usable stand-in and distances mean something; above it, the search still
+ * runs but neither the distances nor an empty result can be trusted, and the
+ * UI has to say so.
+ */
+export const ZIP3_TRUSTED_SPREAD_MILES = 15;
 
 /**
  * Where to measure from.
  *
- * Exact ZIP first. Failing that, the average of every ZIP sharing its first
- * three digits — the postal sectional centre, roughly county-sized. A family
- * in a ZIP with no certified facility of its own still gets a real search
- * rather than an error, and the UI says which of the two it got.
+ * Exact ZIP first. Failing that, the nearest ZIP by number among those sharing
+ * its first three digits — its neighbour in the same postal sectional centre.
+ * A family in a ZIP with no certified facility of its own still gets a real
+ * search rather than an error, and the UI says which of the two it got.
+ *
+ * Returns `spreadMiles` alongside, because the fallback's usefulness depends
+ * entirely on how tightly that area is packed and the caller cannot otherwise
+ * tell a one-mile guess from a fifty-mile one.
  */
 export const resolveZip = internalQuery({
   args: { zip: v.string() },
@@ -246,11 +311,12 @@ export const resolveZip = internalQuery({
       longitude: v.number(),
       precision: v.union(v.literal("zip"), v.literal("zip3")),
       facilityCount: v.number(),
+      spreadMiles: v.number(),
     }),
   ),
   handler: async (ctx, { zip }) => {
-    const clean = zip.trim().slice(0, 5);
-    if (!/^\d{5}$/.test(clean)) return null;
+    const clean = normalizeZip(zip);
+    if (clean === null) return null;
 
     const exact = await ctx.db
       .query("zipCentroids")
@@ -262,6 +328,7 @@ export const resolveZip = internalQuery({
         longitude: exact.longitude,
         precision: "zip" as const,
         facilityCount: exact.facilityCount,
+        spreadMiles: 0,
       };
     }
 
@@ -271,14 +338,41 @@ export const resolveZip = internalQuery({
       .collect();
     if (area.length === 0) return null;
 
-    // Weight by facility count so a dense urban ZIP pulls the centre more than
-    // a rural one with a single home — closer to where people actually are.
-    const total = area.reduce((s, r) => s + r.facilityCount, 0);
+    // The numerically nearest ZIP in the area, not the average of all of them.
+    //
+    // The post office hands out ZIPs within a sectional centre in rough
+    // geographic order, so 99501 sits beside 99504 on the ground as well as on
+    // paper. Averaging instead treats the area as a blob: 995 holds Anchorage,
+    // Bethel and Cordova, Bethel is 600 miles west, and the average lands in
+    // Cook Inlet — 55 miles from the Anchorage the family actually typed, with
+    // every Anchorage home then ranked behind a facility in Soldotna. Picking
+    // a neighbour keeps the origin on dry land in the right town.
+    const typed = Number(clean);
+    const anchor = area.reduce((best, r) =>
+      Math.abs(Number(r.zip) - typed) < Math.abs(Number(best.zip) - typed)
+        ? r
+        : best,
+    );
+
+    // How wrong the neighbour could be: the furthest ZIP we know of in this
+    // area. It is a bound, not an estimate — usually far larger than the real
+    // error — and it is what decides whether the distances below are worth
+    // showing as figures or only as a rough ordering.
+    //
+    // A area we only know one ZIP of gets no confidence at all: one point says
+    // nothing about how large the region is, and 969 is a single Guam ZIP
+    // standing in for islands 120 miles apart.
+    const spreadMiles =
+      area.length === 1
+        ? Number.POSITIVE_INFINITY
+        : area.reduce((worst, r) => Math.max(worst, milesBetween(anchor, r)), 0);
+
     return {
-      latitude: area.reduce((s, r) => s + r.latitude * r.facilityCount, 0) / total,
-      longitude: area.reduce((s, r) => s + r.longitude * r.facilityCount, 0) / total,
+      latitude: anchor.latitude,
+      longitude: anchor.longitude,
       precision: "zip3" as const,
-      facilityCount: total,
+      facilityCount: area.reduce((s, r) => s + r.facilityCount, 0),
+      spreadMiles,
     };
   },
 });
@@ -306,6 +400,14 @@ export type NearbyResult = {
     latitude: number;
     longitude: number;
     precision: "zip" | "zip3";
+    /** Worst-case miles between this origin and the ZIP that was typed. */
+    spreadMiles: number;
+    /**
+     * Whether the origin is close enough to the typed ZIP for the distances
+     * below to mean anything, and for an empty list to mean "nothing near you"
+     * rather than "we were looking in the wrong place".
+     */
+    approximate: boolean;
   } | null;
   facilities: NearbyFacility[];
 };
@@ -346,6 +448,8 @@ export const facilitiesNearZip = query({
         latitude: v.number(),
         longitude: v.number(),
         precision: v.union(v.literal("zip"), v.literal("zip3")),
+        spreadMiles: v.number(),
+        approximate: v.boolean(),
       }),
     ),
     facilities: v.array(nearbyRow),
@@ -360,6 +464,20 @@ export const facilitiesNearZip = query({
     );
     if (!origin) return { origin: null, facilities: [] };
 
+    // When the origin is the centre of a sprawling three-digit area, measuring
+    // the family's radius from it hides real facilities: searching 25 miles
+    // around Kenai finds nothing, while four certified homes sit five miles
+    // from the Anchorage ZIP that was actually typed. So the sweep is widened
+    // by however far off the origin could be. Nothing is filtered back out
+    // afterwards — a family being shown a home that turns out to be too far is
+    // a nuisance, and a family never being shown one is the failure this
+    // product exists to prevent (CLAUDE.md section 4).
+    const approximate = origin.spreadMiles > ZIP3_TRUSTED_SPREAD_MILES;
+    // Capped before it leaves the backend: the bound can be an unknown-sized
+    // area, and neither the sweep nor a sentence in the UI can carry infinity.
+    const spreadMiles = Math.min(origin.spreadMiles, 150);
+    const sweep = Math.min(150, radius + (approximate ? spreadMiles : 0));
+
     // The S2 index does the geometry. It returns the nearest keys already
     // ordered and already bounded by distance, so nothing here reads a row it
     // is not going to return — which is the difference between this and
@@ -369,7 +487,7 @@ export const facilitiesNearZip = query({
       ctx,
       { latitude: origin.latitude, longitude: origin.longitude },
       want,
-      radius * METRES_PER_MILE,
+      sweep * METRES_PER_MILE,
     );
 
     const facilities: NearbyFacility[] = [];
@@ -400,6 +518,8 @@ export const facilitiesNearZip = query({
         latitude: origin.latitude,
         longitude: origin.longitude,
         precision: origin.precision,
+        spreadMiles,
+        approximate,
       },
       facilities,
     };
@@ -455,7 +575,14 @@ export const startSearchNearZip = action({
 
     // Every one of these is echoed onto the board, into an export, and — for
     // the label — into an inbox address, so none of them is unbounded.
-    const zip = args.zip.trim().slice(0, 5);
+    //
+    // The ZIP is rejected outright rather than truncated: a search row carries
+    // its ZIP into the email the facility receives, and "91767x" quietly
+    // becoming Pomona is worse than being told to check the five digits.
+    const zip = normalizeZip(args.zip);
+    if (zip === null) {
+      return { searchId: null, matched: 0, reason: "unknown_zip" };
+    }
     const label = args.label.trim().slice(0, 60) || "My search";
     const radius = Math.min(100, Math.max(1, args.radiusMiles ?? 25));
     const mustHaves = (args.mustHaves ?? [])

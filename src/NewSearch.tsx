@@ -132,6 +132,7 @@ export default function NewSearch({
   }
 
   const matches = near?.facilities ?? [];
+  const loadingNearby = zipReady && near === undefined;
 
   return (
     <section className="mx-auto grid max-w-7xl gap-12 px-6 py-12 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-16">
@@ -279,16 +280,27 @@ export default function NewSearch({
           </fieldset>
 
           <div className="mt-10 flex flex-wrap items-center gap-4">
+            {/*
+              Not disabled on an empty preview. The backend distinguishes a ZIP
+              it cannot place from a ZIP with nothing in range, and blocking the
+              click here meant nobody ever read either sentence — the button
+              just sat there telling someone who had typed five digits to enter
+              a ZIP code.
+            */}
             <button
               type="submit"
-              disabled={!zipReady || busy || !ready || matches.length === 0}
+              disabled={!zipReady || busy || !ready || loadingNearby}
               className="btn btn-primary btn-lg"
             >
               {busy
                 ? "Opening the board…"
-                : matches.length > 0
-                  ? `Email these ${matches.length} facilities`
-                  : "Enter a ZIP code"}
+                : !zipReady
+                  ? "Enter a ZIP code"
+                  : loadingNearby
+                    ? "Checking that ZIP…"
+                    : matches.length > 0
+                      ? `Email these ${matches.length} facilities`
+                      : "Start this search"}
             </button>
             <button
               type="button"
@@ -313,7 +325,7 @@ export default function NewSearch({
 
       <NearbyPreview
         zipReady={zipReady}
-        loading={zipReady && near === undefined}
+        loading={loadingNearby}
         result={near}
         radiusMiles={radiusMiles}
         zip={zip}
@@ -341,7 +353,11 @@ function NearbyPreview({
   loading: boolean;
   result:
     | {
-        origin: { precision: "zip" | "zip3" } | null;
+        origin: {
+          precision: "zip" | "zip3";
+          spreadMiles: number;
+          approximate: boolean;
+        } | null;
         facilities: Array<{
           ccn: string;
           name: string;
@@ -388,13 +404,22 @@ function NearbyPreview({
           </div>
         )}
 
+        {/*
+          An empty result means two different things depending on how well we
+          could place the ZIP, and telling someone to widen a radius that was
+          measured from the wrong place is worse than saying nothing.
+        */}
         {zipReady && result && result.origin !== null && result.facilities.length === 0 && (
           <div className="p-5">
-            <Empty
-              title="Nothing certified within that distance"
-            >
-              {`No Medicare-certified facility sits within ${radiusMiles} miles of ${zip}. Widening the radius usually finds some.`}
-            </Empty>
+            {result.origin.approximate ? (
+              <Empty title="We cannot place that ZIP precisely">
+                {`${zip} has no certified facility of its own, and the wider ${zip.slice(0, 3)} postal area reaches ${Math.round(result.origin.spreadMiles)} miles from its centre — too spread out for us to say what is near you. Check the five digits, or try a ZIP closer to the town itself.`}
+              </Empty>
+            ) : (
+              <Empty title="Nothing certified within that distance">
+                {`No Medicare-certified facility sits within ${radiusMiles} miles of ${zip}. Widening the radius usually finds some.`}
+              </Empty>
+            )}
           </div>
         )}
 
@@ -432,10 +457,17 @@ function NearbyPreview({
         ))}
       </div>
 
-      {result?.origin?.precision === "zip3" && (
+      {/*
+        Provenance, in the sense CLAUDE.md section 8 means it: a distance we
+        measured from a guessed origin is a different kind of fact from one we
+        measured from the ZIP itself, and the family is told which they have.
+      */}
+      {result?.origin?.precision === "zip3" && result.facilities.length > 0 && (
         <p className="t-meta mt-3">
           No certified facility sits inside {zip} itself, so distances are
           measured from the centre of the wider {zip.slice(0, 3)} postal area.
+          {result.origin.approximate &&
+            ` That area reaches ${Math.round(result.origin.spreadMiles)} miles from its centre, so treat these distances as rough — a facility listed here may be much closer to you, or much further, than it says.`}
         </p>
       )}
 
