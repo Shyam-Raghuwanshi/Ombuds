@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-16T10:12:00Z
+- **Last updated:** 2026-09-16T10:41:50Z
 
 ## Log
 
@@ -723,3 +723,37 @@ campaign: a dedicated inbox, seven real sends, all delivered, none recorded
 locally, round two at 68 seconds, settled at 118, $0.082 in model calls.
 AgentMail also raised this organisation's daily send limit from 100 to 1,000,
 which is about 140 judge sessions a day rather than 14.
+
+### 2026-09-16 - 0315356
+A family in downtown Anchorage searching 99501 within 25 miles was told nothing
+was near them. Three certified homes sit about a mile away. CMS gives us a
+coordinate per facility but nothing that says where a ZIP is, so we derive each
+ZIP from the facilities inside it — and when the typed ZIP holds none, we fell
+back to averaging every ZIP sharing its first three digits. The 995 area is
+Anchorage, Bethel and Cordova; Bethel is 600 miles west, so the average landed
+in Cook Inlet and every radius was measured from open water. The fallback now
+takes the numerically nearest known ZIP instead, because the post office hands
+out ZIPs within a sectional centre in rough geographic order — 99501's
+neighbour is 99504, which is Anchorage (`convex/geo.ts`). Convex features:
+internal queries, reactive queries, @convex-dev/geospatial radius search.
+
+A neighbour is still a guess, so `resolveZip` now reports how far wrong it could
+be — the distance to the furthest ZIP in that area, and no confidence at all for
+an area we know a single ZIP of, which is how 969 stands in for Guam and Saipan
+120 miles apart. Where that bound is loose the search widens by it so no
+facility is hidden, and the board labels the distances rough instead of printing
+them as fact. Two smaller fixes rode along: a ZIP is validated before it is
+sliced, so "91767x" and a pasted phone number no longer resolve to Pomona; and
+the submit button no longer disables itself on an empty result, which had made
+both of the backend's explanations unreachable and left the button telling
+someone who had typed five digits to enter a ZIP code (`src/NewSearch.tsx`).
+
+Tested against the full federal dataset. All 14,690 facilities were ingested
+into the dev deployment and both indexes rebuilt, then a 24-ZIP national sample
+was run before and after: 16 results identical, 8 changed, and all 8 moved
+closer — Bozeman 13.2mi to 0.0, Santa Fe 16.0 to 0.1, Las Cruces 19.5 to 0.0,
+Montpelier 3.0 to 0.4. Anchorage went from zero results to the three Anchorage
+homes at under two miles, correctly ordered ahead of Wasilla and Palmer. Twelve
+malformed inputs were rejected and real ZIP+4 still accepted. One limit stands:
+a well-formed ZIP that does not exist still resolves to its postal area rather
+than an error, which we cannot distinguish without a full ZIP table.
