@@ -11,7 +11,7 @@ import {
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { inquiryPool, provisionInbox, demoFacilityInbox } from "./email";
-import { SEND_STAGGER_MS } from "./email";
+import { SEND_RETRY, SEND_STAGGER_MS } from "./email";
 import { resolveRecipient } from "./lib/sendGuard";
 import { PERSONA_ROSTER, PERSONAS, replyDelayMs } from "./lib/personas";
 import { QUESTION_LABEL, type QuestionKey } from "./lib/questions";
@@ -327,7 +327,12 @@ export const dispatchCampaign = internalMutation({
         ctx,
         internal.email.sendInquiryWorker,
         { inquiryId: inquiry._id },
-        { runAfter: dispatched * SEND_STAGGER_MS },
+        {
+          runAfter: dispatched * SEND_STAGGER_MS,
+          retry: SEND_RETRY,
+          onComplete: internal.email.onSendSettled,
+          context: { inquiryId: inquiry._id },
+        },
       );
       dispatched += 1;
     }
@@ -432,9 +437,16 @@ export const queueOneFacility = internalMutation({
       });
     }
 
-    await inquiryPool.enqueueAction(ctx, internal.email.sendInquiryWorker, {
-      inquiryId,
-    });
+    await inquiryPool.enqueueAction(
+      ctx,
+      internal.email.sendInquiryWorker,
+      { inquiryId },
+      {
+        retry: SEND_RETRY,
+        onComplete: internal.email.onSendSettled,
+        context: { inquiryId },
+      },
+    );
     return {
       queued: true,
       reason: "queued",
@@ -963,9 +975,16 @@ export const backfillDiscoveredEmails = internalMutation({
         rosterIndex += 1;
       }
 
-      await inquiryPool.enqueueAction(ctx, internal.email.sendInquiryWorker, {
-        inquiryId: inquiry._id,
-      });
+      await inquiryPool.enqueueAction(
+        ctx,
+        internal.email.sendInquiryWorker,
+        { inquiryId: inquiry._id },
+        {
+          retry: SEND_RETRY,
+          onComplete: internal.email.onSendSettled,
+          context: { inquiryId: inquiry._id },
+        },
+      );
       queued += 1;
     }
 

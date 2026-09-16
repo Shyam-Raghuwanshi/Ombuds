@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { AgentMail, type OutboundId } from "@agentmail/convex";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { Workpool } from "@convex-dev/workpool";
+import { Workpool, vOnCompleteArgs } from "@convex-dev/workpool";
 import {
   internalAction,
   internalMutation,
@@ -140,6 +140,28 @@ function threadAnchor(
 
 /** Sends are staggered so the board fills in rather than blinking on at once. */
 const SEND_STAGGER_MS = 1_200;
+
+/**
+ * How hard the pool tries to put a letter on the wire.
+ *
+ * One flaky HTTP call used to end a conversation permanently: the worker caught
+ * the error, marked the row bounced, and the persona reply — scheduled only
+ * after a successful send — never happened. Three attempts over a few seconds
+ * cover the transient case, and `onSendSettled` handles the rest.
+ *
+ * The worker re-sends from the top on a retry, so a send that reached AgentMail
+ * but failed on the way back could produce a second copy. In demo mode that
+ * copy lands in an inbox we own, and live sending stays off behind two flags.
+ */
+export const SEND_RETRY = { maxAttempts: 3, initialBackoffMs: 1_500, base: 2 };
+
+/**
+ * Test seam: force every send to fail, so the recovery path can be exercised
+ * without waiting for AgentMail to have a bad day. Never set in production.
+ */
+function simulateSendFailure(): boolean {
+  return (process.env.OMBUDS_SIMULATE_SEND_FAILURE ?? "").toLowerCase() === "true";
+}
 
 /**
  * How long we will wait for a model to write the family's letter before
@@ -577,19 +599,6 @@ export const markSent = internalMutation({
   },
 });
 
-export const markSendFailed = internalMutation({
-  args: { inquiryId: v.id("inquiries"), error: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { inquiryId, error }) => {
-    await ctx.db.patch(inquiryId, {
-      status: "bounced",
-      deliveryStatus: "failed",
-      deliveryError: error.slice(0, 400),
-    });
-    return null;
-  },
-});
-
 /**
  * Send one facility its copy of the family's letter.
  *
@@ -629,25 +638,29 @@ export const sendInquiryWorker = internalAction({
 
     // Nothing below this line chooses a recipient. `inquiry.toEmail` was fixed
     // by the send guard when the campaign was queued.
+    //
+    // A failure is thrown rather than swallowed: the pool retries this worker
+    // with backoff, and `onSendSettled` decides what to do only once every
+    // attempt has failed. Recording the failure here instead is what let one
+    // bad HTTP call end a conversation — and call it a bounce, which is a
+    // claim about the facility's address rather than about us.
     let outboundId: string | undefined;
-    try {
-      if (demoRealDelivery() || !inquiry.simulated) {
-        const id = await agentmail.sendMessage(amCtx(ctx), search.inboxId, {
-          to: inquiry.toEmail,
-          subject,
-          text: body,
-          // Threads are labelled with the search so that a shared inbox can
-          // still be filtered down to one family's campaign.
-          labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`],
-        });
-        outboundId = id as unknown as string;
+    if (demoRealDelivery() || !inquiry.simulated) {
+      if (simulateSendFailure()) {
+        throw new Error(
+          "OMBUDS_SIMULATE_SEND_FAILURE is set: refusing this send so the " +
+            "recovery path can be exercised. Never set in production.",
+        );
       }
-    } catch (error) {
-      await ctx.runMutation(internal.email.markSendFailed, {
-        inquiryId,
-        error: String(error),
+      const id = await agentmail.sendMessage(amCtx(ctx), search.inboxId, {
+        to: inquiry.toEmail,
+        subject,
+        text: body,
+        // Threads are labelled with the search so that a shared inbox can
+        // still be filtered down to one family's campaign.
+        labels: [`search:${search._id}`, `ccn:${inquiry.ccn}`],
       });
-      return null;
+      outboundId = id as unknown as string;
     }
 
     await ctx.runMutation(internal.email.markSent, {
@@ -671,6 +684,92 @@ export const sendInquiryWorker = internalAction({
         round: 1,
       });
     }
+    return null;
+  },
+});
+
+/**
+ * Every send the pool gives up on, after its retries.
+ *
+ * Two different facts, and the row must not confuse them:
+ *
+ *   a real facility  nothing was delivered. `deliveryStatus: "failed"` says the
+ *                    letter never left, which is about us; a bounce is about
+ *                    their address and is not claimed here.
+ *   demo mode        the recipient was an inbox we own, so nobody is owed
+ *                    anything. The letter is recorded exactly as composed,
+ *                    labelled as never having gone out, and the persona answers
+ *                    it — the family's board fills in as it always does, and
+ *                    the screen says which part of that was real.
+ */
+export const onSendSettled = internalMutation({
+  args: vOnCompleteArgs(v.object({ inquiryId: v.id("inquiries") })),
+  returns: v.null(),
+  handler: async (ctx, { context, result }) => {
+    if (result.kind === "success") return null;
+
+    const inquiry = await ctx.db.get(context.inquiryId);
+    // Anything other than "queued" means a letter did go out after all.
+    if (!inquiry || inquiry.status !== "queued") return null;
+    const search = await ctx.db.get(inquiry.searchId);
+    if (!search) return null;
+
+    const error =
+      result.kind === "failed" ? result.error : "the send was canceled";
+    console.error(
+      `[email] every send attempt failed for ${inquiry.facilityName}: ${error.slice(0, 200)}`,
+    );
+
+    if (!inquiry.simulated) {
+      await ctx.db.patch(context.inquiryId, {
+        status: "bounced",
+        deliveryStatus: "failed",
+        deliveryError: error.slice(0, 400),
+      });
+      return null;
+    }
+
+    const draft = search.letterDraft;
+    if (!draft) return null;
+
+    const tourDates = tourWindow(Date.now());
+    const { questions } = normalizeQuestions(
+      draft.questions,
+      search.careLevel,
+      tourDates,
+    );
+    const body = assembleLetter({
+      opening: `Hello,\n\n${draft.opening}`,
+      questions,
+      closing: draft.closing,
+      signOff: `Thank you,\nThe ${search.label} family`,
+    });
+
+    await ctx.db.patch(context.inquiryId, {
+      status: "sent",
+      sentAt: inquiry.sentAt ?? Date.now(),
+      rounds: 1,
+      deliveryStatus: "recorded_locally",
+      deliveryError: error.slice(0, 400),
+    });
+    await ctx.db.insert("threadMessages", {
+      inquiryId: context.inquiryId,
+      searchId: inquiry.searchId,
+      direction: "outbound",
+      round: 1,
+      subject: `${draft.subject} — ${inquiry.facilityName}`,
+      body,
+      fromAddress: search.inboxEmail,
+      toAddress: inquiry.toEmail,
+      threadId: inquiry.threadId,
+      simulated: false, // our own letter, whether or not it reached the wire
+      model: draft.model,
+      createdAt: Date.now(),
+    });
+    await ctx.runMutation(internal.demo.schedulePersonaReply, {
+      inquiryId: context.inquiryId,
+      round: 1,
+    });
     return null;
   },
 });

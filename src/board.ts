@@ -60,6 +60,12 @@ export type BoardRow = {
  */
 export function waitingLabel(row: BoardRow): string {
   if (row.noEmailFound) return "No email address published";
+  // The letter exists and the conversation is real, but it never reached the
+  // wire — AgentMail refused every attempt. Saying "sent" here would be the
+  // one thing this column must never do.
+  if (row.deliveryStatus === "recorded_locally") {
+    return "Recorded here — AgentMail could not accept this letter";
+  }
   switch (row.status) {
     case "queued":
       return "Queued to send";
@@ -74,7 +80,11 @@ export function waitingLabel(row: BoardRow): string {
         ? "Their answer was too vague — asking for a figure"
         : "They left something out — asking again";
     case "bounced":
-      return "The address bounced";
+      // A bounce is a fact about their address; a failed send is a fact about
+      // us, and the two must not be reported as the same thing.
+      return row.deliveryStatus === "failed"
+        ? "We could not deliver this letter"
+        : "The address bounced";
     case "no_response":
       return row.nudgeCount > 0
         ? "No reply, and no reply to our one follow-up note"

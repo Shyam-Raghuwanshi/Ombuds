@@ -383,7 +383,13 @@ function Row({
             {!row.simulated && row.toEmail && (
               <span className="break-all">Emailed {row.toEmail}</span>
             )}
-            {row.deliveryStatus && <span>AgentMail: {row.deliveryStatus}</span>}
+            {row.deliveryStatus === "recorded_locally" ? (
+              <span>
+                AgentMail could not accept this letter — recorded here instead
+              </span>
+            ) : (
+              row.deliveryStatus && <span>AgentMail: {row.deliveryStatus}</span>
+            )}
             <button
               onClick={() => onOpenThread(row.inquiryId as Id<"inquiries">)}
               className="link ml-auto font-semibold text-ink"

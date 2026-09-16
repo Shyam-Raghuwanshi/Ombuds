@@ -130,7 +130,9 @@ export function ThreadView({
       <h2 className="t-title mt-4">{facilityName(thread.facilityName)}</h2>
       <p className="t-meta mt-2 break-all">
         {thread.inboxEmail} → {thread.toEmail}
-        {thread.deliveryStatus && ` · AgentMail: ${thread.deliveryStatus}`}
+        {thread.deliveryStatus === "recorded_locally"
+          ? " · AgentMail could not accept this letter, so it is recorded here"
+          : thread.deliveryStatus && ` · AgentMail: ${thread.deliveryStatus}`}
       </p>
 
       {thread.simulated && (
