@@ -115,7 +115,7 @@ export default function NewSearch({
         // broken product when the real answer is a mistyped ZIP.
         setError(
           r.reason === "unknown_zip"
-            ? "We do not recognise that ZIP code. Check the five digits and try again."
+            ? `${zip} is not a US ZIP code. Check the five digits and try again.`
             : `We could not find a Medicare-certified facility within ${radiusMiles} miles of ${zip}. Try a wider radius.`,
         );
       })
@@ -353,11 +353,7 @@ function NearbyPreview({
   loading: boolean;
   result:
     | {
-        origin: {
-          precision: "zip" | "zip3";
-          spreadMiles: number;
-          approximate: boolean;
-        } | null;
+        origin: { city: string; state: string } | null;
         facilities: Array<{
           ccn: string;
           name: string;
@@ -396,30 +392,17 @@ function NearbyPreview({
 
         {zipReady && result && result.origin === null && (
           <div className="p-5">
-            <Empty
-              title="We do not recognise that ZIP"
-            >
-              {`${zip} is not a ZIP code we can place on a map. Check the five digits.`}
+            <Empty title="That is not a ZIP code">
+              {`${zip} is not a US ZIP code. Check the five digits.`}
             </Empty>
           </div>
         )}
 
-        {/*
-          An empty result means two different things depending on how well we
-          could place the ZIP, and telling someone to widen a radius that was
-          measured from the wrong place is worse than saying nothing.
-        */}
         {zipReady && result && result.origin !== null && result.facilities.length === 0 && (
           <div className="p-5">
-            {result.origin.approximate ? (
-              <Empty title="We cannot place that ZIP precisely">
-                {`${zip} has no certified facility of its own, and the wider ${zip.slice(0, 3)} postal area reaches ${Math.round(result.origin.spreadMiles)} miles from its centre — too spread out for us to say what is near you. Check the five digits, or try a ZIP closer to the town itself.`}
-              </Empty>
-            ) : (
-              <Empty title="Nothing certified within that distance">
-                {`No Medicare-certified facility sits within ${radiusMiles} miles of ${zip}. Widening the radius usually finds some.`}
-              </Empty>
-            )}
+            <Empty title="Nothing certified within that distance">
+              {`No Medicare-certified facility sits within ${radiusMiles} miles of ${result.origin.city}, ${result.origin.state}. Widening the radius usually finds some.`}
+            </Empty>
           </div>
         )}
 
@@ -458,16 +441,14 @@ function NearbyPreview({
       </div>
 
       {/*
-        Provenance, in the sense CLAUDE.md section 8 means it: a distance we
-        measured from a guessed origin is a different kind of fact from one we
-        measured from the ZIP itself, and the family is told which they have.
+        Provenance, in the sense CLAUDE.md section 8 means it: say which place
+        we measured from, so a mistyped ZIP that happens to be real is visible
+        as the wrong town rather than passing as the right one.
       */}
-      {result?.origin?.precision === "zip3" && result.facilities.length > 0 && (
+      {result?.origin && result.facilities.length > 0 && (
         <p className="t-meta mt-3">
-          No certified facility sits inside {zip} itself, so distances are
-          measured from the centre of the wider {zip.slice(0, 3)} postal area.
-          {result.origin.approximate &&
-            ` That area reaches ${Math.round(result.origin.spreadMiles)} miles from its centre, so treat these distances as rough — a facility listed here may be much closer to you, or much further, than it says.`}
+          Distances measured from {result.origin.city}, {result.origin.state} —
+          the centre of ZIP {zip}.
         </p>
       )}
 

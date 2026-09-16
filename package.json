@@ -13,7 +13,8 @@
     "deploy": "npx @convex-dev/static-hosting deploy",
     "fixtures": "node --experimental-strip-types --no-warnings scripts/run-fixtures.mjs",
     "seed:demo": "npx convex run cms:syncTagCatalog '{}' && for c in 055016 055085 056487; do npx convex run cms:ingestFacilityByCcn \"{\\\"ccn\\\":\\\"$c\\\"}\"; done",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "seed:zips": "node scripts/seed-zips.mjs"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",

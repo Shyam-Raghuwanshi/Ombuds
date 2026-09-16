@@ -519,22 +519,26 @@ export default defineSchema({
   // Where a ZIP code is, so a family's "near me" has an origin to measure from.
   //
   // CMS ships latitude/longitude on every facility but publishes nothing about
-  // ZIP codes themselves, and a family types a ZIP, not a coordinate. Rather
-  // than take a geocoding dependency for one number, each ZIP's centre is
-  // averaged from the facilities CMS already places inside it — derived from
-  // data we already hold, and exact enough for a 25-mile radius.
+  // ZIP codes themselves, and a family types a ZIP, not a coordinate. We used
+  // to derive each ZIP from the facilities CMS places inside it and fall back
+  // to the three-digit postal area otherwise. Measured against the real
+  // gazetteer that was wrong for three quarters of the country: only 21.5% of
+  // the 41,488 real ZIPs contain a certified facility, and the fallback placed
+  // the rest a median of 20.8 miles from where they actually are — wider than
+  // the 25-mile radius the search defaults to. A family in downtown Anchorage
+  // was told nothing was near them while three homes sat a mile away.
   //
-  // `zip3` is the first three digits, which is a real postal unit (the
-  // sectional centre). It is the fallback for a ZIP with no certified facility
-  // of its own — roughly a county-sized area, and a far better answer than
-  // refusing the search.
-  zipCentroids: defineTable({
+  // So this is the gazetteer itself: every US ZIP and where it is, from the
+  // GeoNames postal-code export (CC BY 4.0, `data/us-zip-locations.csv`). One
+  // indexed lookup, exact everywhere, and a ZIP that is not in here is not a
+  // ZIP — which is the only way to tell a family they mistyped.
+  zipLocations: defineTable({
     zip: v.string(),
-    zip3: v.string(),
     latitude: v.number(),
     longitude: v.number(),
-    facilityCount: v.number(),
-  })
-    .index("by_zip", ["zip"])
-    .index("by_zip3", ["zip3"]),
+    // Shown when a search falls outside its own ZIP, so a family can see we
+    // understood where they meant.
+    city: v.string(),
+    state: v.string(),
+  }).index("by_zip", ["zip"]),
 });

@@ -17,10 +17,19 @@ import { allow, busyMessage } from "./limits";
  * "Homes near me", which is the question a family actually arrives with.
  *
  * CMS ships latitude and longitude on all 14,690 facilities but says nothing
- * about where a ZIP code is, and a family types a ZIP. So the origin of every
- * search is derived from the facilities CMS already places inside that ZIP —
- * no geocoding vendor, no extra key, and accurate to well inside the radius
- * anyone searches at.
+ * about where a ZIP code is, and a family types a ZIP. We used to derive that
+ * from the facilities CMS places inside each ZIP, falling back to the wider
+ * three-digit postal area when a ZIP held none. Checked against the real
+ * gazetteer, that was wrong for most of the country: only 21.5% of the 41,488
+ * real US ZIPs contain a certified facility, and the fallback placed the other
+ * 75.5% a median of 20.8 miles from where they actually are — further than the
+ * 25 miles the search defaults to. A third of all ZIPs were off by more than
+ * the entire search radius.
+ *
+ * So the origin now comes from a gazetteer of every US ZIP (`zipLocations`,
+ * seeded from GeoNames). One indexed lookup, exact everywhere, and a ZIP that
+ * is absent from it is not a ZIP — which is the only way to tell a family they
+ * mistyped rather than quietly searching somewhere else.
  *
  * The radius search itself is the @convex-dev/geospatial component: facility
  * positions live in an S2 cell index keyed by CCN, and a search asks it for the
@@ -58,201 +67,81 @@ export function normalizeZip(input: string): string | null {
   return clean.slice(0, 5);
 }
 
-/**
- * Great-circle distance in miles.
- *
- * Only used to measure how far apart the ZIPs inside one three-digit area sit.
- * The radius search itself never comes through here — that is the S2 index's
- * job, and it is both faster and more accurate than this.
- */
-function milesBetween(
-  a: { latitude: number; longitude: number },
-  b: { latitude: number; longitude: number },
-): number {
-  const R = 3958.7613; // mean Earth radius, miles
-  const rad = Math.PI / 180;
-  const dLat = (b.latitude - a.latitude) * rad;
-  const dLon = (b.longitude - a.longitude) * rad;
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(a.latitude * rad) *
-      Math.cos(b.latitude * rad) *
-      Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
 // =============================================================================
-// Building the ZIP index
+// The ZIP gazetteer
 // =============================================================================
 
 /**
- * Fold one page of facilities into the ZIP centroid table.
+ * Load one page of the ZIP gazetteer.
  *
- * Averages incrementally — `mean' = (mean * n + x) / (n + 1)` — so the table
- * is correct after every page rather than only at the end, and a run that dies
- * halfway leaves usable data instead of a half-built index.
+ * Fed by `npm run seed:zips` from `data/us-zip-locations.csv`, which is the
+ * GeoNames postal-code export trimmed to the five fields we use. Keyed by ZIP
+ * and idempotent, so a re-run refreshes in place rather than duplicating and
+ * the seed can be restarted from anywhere.
  */
-export const accumulateZipPage = internalMutation({
+export const upsertZipLocations = internalMutation({
   args: {
-    points: v.array(
+    rows: v.array(
       v.object({
         zip: v.string(),
         latitude: v.number(),
         longitude: v.number(),
+        city: v.string(),
+        state: v.string(),
       }),
     ),
   },
-  returns: v.number(),
-  handler: async (ctx, { points }) => {
-    let written = 0;
-    for (const p of points) {
-      // CMS publishes ZIP+4 for some rows and "" for a few. Only the leading
-      // five digits identify the delivery area, and a row without them cannot
-      // be placed on a map at all.
-      const zip = normalizeZip(p.zip);
+  returns: v.object({ inserted: v.number(), updated: v.number() }),
+  handler: async (ctx, { rows }) => {
+    let inserted = 0;
+    let updated = 0;
+    for (const r of rows) {
+      const zip = normalizeZip(r.zip);
       if (zip === null) continue;
-      // 0,0 is the Gulf of Guinea, and it is what CMS publishes when it has no
-      // coordinate. Averaging it in would drag a ZIP's centre into the ocean.
-      if (p.latitude === 0 && p.longitude === 0) continue;
-
       const existing = await ctx.db
-        .query("zipCentroids")
+        .query("zipLocations")
         .withIndex("by_zip", (q) => q.eq("zip", zip))
         .unique();
-
-      if (!existing) {
-        await ctx.db.insert("zipCentroids", {
-          zip,
-          zip3: zip.slice(0, 3),
-          latitude: p.latitude,
-          longitude: p.longitude,
-          facilityCount: 1,
-        });
-      } else {
-        const n = existing.facilityCount;
+      if (existing) {
         await ctx.db.patch(existing._id, {
-          latitude: (existing.latitude * n + p.latitude) / (n + 1),
-          longitude: (existing.longitude * n + p.longitude) / (n + 1),
-          facilityCount: n + 1,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          city: r.city,
+          state: r.state,
         });
+        updated += 1;
+      } else {
+        await ctx.db.insert("zipLocations", { ...r, zip });
+        inserted += 1;
       }
-      written += 1;
     }
-    return written;
+    return { inserted, updated };
   },
 });
 
-/** One page of facility coordinates, for the centroid build. */
-export const facilityPointPage = internalQuery({
-  args: { cursor: v.union(v.string(), v.null()), size: v.number() },
+/**
+ * One page of the gazetteer's size, so the seed can verify itself.
+ *
+ * The cursor is the caller's to hold: Convex allows a single paginated query
+ * per function, and 41,488 rows is well past what one read should materialise
+ * anyway.
+ */
+export const zipGazetteerPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
   returns: v.object({
-    points: v.array(
-      v.object({
-        zip: v.string(),
-        latitude: v.number(),
-        longitude: v.number(),
-      }),
-    ),
+    count: v.number(),
     cursor: v.union(v.string(), v.null()),
     isDone: v.boolean(),
   }),
-  handler: async (ctx, { cursor, size }) => {
+  handler: async (ctx, { cursor }) => {
     const page = await ctx.db
-      .query("facilities")
-      .paginate({ cursor, numItems: size });
+      .query("zipLocations")
+      .paginate({ cursor, numItems: 4000 });
     return {
-      points: page.page.map((f) => ({
-        zip: f.zip,
-        latitude: f.latitude,
-        longitude: f.longitude,
-      })),
+      count: page.page.length,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
-  },
-});
-
-/**
- * Walk the facility table and build the ZIP index, one page at a time.
- *
- * Re-runnable, but not idempotent on its own: the averages accumulate, so a
- * second run over the same facilities would weight them twice. Call
- * `rebuildZipIndex` rather than this, which clears first.
- */
-export const buildZipCentroidsPage = internalMutation({
-  args: {
-    cursor: v.union(v.string(), v.null()),
-    written: v.optional(v.number()),
-  },
-  returns: v.object({ written: v.number(), done: v.boolean() }),
-  // Annotated because the handler schedules itself, and Convex's generated
-  // `internal.geo.*` type would otherwise be inferred from this very function.
-  handler: async (
-    ctx,
-    { cursor, written },
-  ): Promise<{ written: number; done: boolean }> => {
-    const page: {
-      points: Array<{ zip: string; latitude: number; longitude: number }>;
-      cursor: string | null;
-      isDone: boolean;
-    } = await ctx.runQuery(internal.geo.facilityPointPage, {
-      cursor,
-      size: 400,
-    });
-    const added: number = await ctx.runMutation(internal.geo.accumulateZipPage, {
-      points: page.points,
-    });
-    const total = (written ?? 0) + added;
-
-    if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.geo.buildZipCentroidsPage, {
-        cursor: page.cursor,
-        written: total,
-      });
-      return { written: total, done: false };
-    }
-    console.log(`[geo] ZIP index built from ${total} facility coordinates`);
-    return { written: total, done: true };
-  },
-});
-
-/** Empty the ZIP index so a rebuild starts from zero rather than double-counting. */
-export const clearZipCentroids = internalMutation({
-  args: { cursor: v.union(v.string(), v.null()) },
-  returns: v.object({ done: v.boolean() }),
-  handler: async (ctx, { cursor }) => {
-    const page = await ctx.db
-      .query("zipCentroids")
-      .paginate({ cursor, numItems: 400 });
-    for (const row of page.page) await ctx.db.delete(row._id);
-
-    if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.geo.clearZipCentroids, {
-        cursor: page.continueCursor,
-      });
-      return { done: false };
-    }
-    await ctx.scheduler.runAfter(0, internal.geo.buildZipCentroidsPage, {
-      cursor: null,
-    });
-    return { done: true };
-  },
-});
-
-/**
- * Rebuild the ZIP index from the current facility table.
- *
- * Run after a full CMS ingest. Clears first, then rebuilds, both chained
- * through the scheduler.
- */
-export const rebuildZipIndex = internalAction({
-  args: {},
-  returns: v.object({ started: v.boolean() }),
-  handler: async (ctx): Promise<{ started: boolean }> => {
-    await ctx.scheduler.runAfter(0, internal.geo.clearZipCentroids, {
-      cursor: null,
-    });
-    return { started: true };
   },
 });
 
@@ -263,44 +152,20 @@ export const rebuildZipIndex = internalAction({
 export type ZipOrigin = {
   latitude: number;
   longitude: number;
-  /** Whether we found the ZIP itself or fell back to its three-digit area. */
-  precision: "zip" | "zip3";
-  facilityCount: number;
-  /**
-   * How far the origin could be from where the family actually is, in miles.
-   *
-   * Zero for an exact ZIP. For the three-digit fallback it is the distance from
-   * the area centre to the furthest ZIP in that area — the honest upper bound
-   * on our error, since the typed ZIP could be any of them.
-   */
-  spreadMiles: number;
+  city: string;
+  state: string;
 };
-
-/**
- * How far a three-digit area may be off before its centre stops standing in
- * for a ZIP inside it.
- *
- * Most prefixes are small: 917 is a corner of Los Angeles County, and its
- * centre is within a mile or two of any ZIP in it. A few are enormous — 995 is
- * most of southcentral Alaska, and its centre sits at Kenai, 55 miles across
- * Cook Inlet from downtown Anchorage. Below this threshold the centre is a
- * usable stand-in and distances mean something; above it, the search still
- * runs but neither the distances nor an empty result can be trusted, and the
- * UI has to say so.
- */
-export const ZIP3_TRUSTED_SPREAD_MILES = 15;
 
 /**
  * Where to measure from.
  *
- * Exact ZIP first. Failing that, the nearest ZIP by number among those sharing
- * its first three digits — its neighbour in the same postal sectional centre.
- * A family in a ZIP with no certified facility of its own still gets a real
- * search rather than an error, and the UI says which of the two it got.
- *
- * Returns `spreadMiles` alongside, because the fallback's usefulness depends
- * entirely on how tightly that area is packed and the caller cannot otherwise
- * tell a one-mile guess from a fifty-mile one.
+ * One indexed lookup against the gazetteer. A ZIP that is not in it is not a
+ * ZIP, and saying so is the point: the previous version fell back to the
+ * three-digit postal area, which meant a mistyped code such as 47300 came back
+ * with real facilities in Muncie and no hint that the ZIP does not exist. The
+ * fallback also had to be *told* it was guessing, which meant every caller and
+ * every screen carried an approximate-or-not branch. None of that is needed
+ * when the answer is simply correct.
  */
 export const resolveZip = internalQuery({
   args: { zip: v.string() },
@@ -309,70 +174,25 @@ export const resolveZip = internalQuery({
     v.object({
       latitude: v.number(),
       longitude: v.number(),
-      precision: v.union(v.literal("zip"), v.literal("zip3")),
-      facilityCount: v.number(),
-      spreadMiles: v.number(),
+      city: v.string(),
+      state: v.string(),
     }),
   ),
   handler: async (ctx, { zip }) => {
     const clean = normalizeZip(zip);
     if (clean === null) return null;
 
-    const exact = await ctx.db
-      .query("zipCentroids")
+    const row = await ctx.db
+      .query("zipLocations")
       .withIndex("by_zip", (q) => q.eq("zip", clean))
       .unique();
-    if (exact) {
-      return {
-        latitude: exact.latitude,
-        longitude: exact.longitude,
-        precision: "zip" as const,
-        facilityCount: exact.facilityCount,
-        spreadMiles: 0,
-      };
-    }
-
-    const area = await ctx.db
-      .query("zipCentroids")
-      .withIndex("by_zip3", (q) => q.eq("zip3", clean.slice(0, 3)))
-      .collect();
-    if (area.length === 0) return null;
-
-    // The numerically nearest ZIP in the area, not the average of all of them.
-    //
-    // The post office hands out ZIPs within a sectional centre in rough
-    // geographic order, so 99501 sits beside 99504 on the ground as well as on
-    // paper. Averaging instead treats the area as a blob: 995 holds Anchorage,
-    // Bethel and Cordova, Bethel is 600 miles west, and the average lands in
-    // Cook Inlet — 55 miles from the Anchorage the family actually typed, with
-    // every Anchorage home then ranked behind a facility in Soldotna. Picking
-    // a neighbour keeps the origin on dry land in the right town.
-    const typed = Number(clean);
-    const anchor = area.reduce((best, r) =>
-      Math.abs(Number(r.zip) - typed) < Math.abs(Number(best.zip) - typed)
-        ? r
-        : best,
-    );
-
-    // How wrong the neighbour could be: the furthest ZIP we know of in this
-    // area. It is a bound, not an estimate — usually far larger than the real
-    // error — and it is what decides whether the distances below are worth
-    // showing as figures or only as a rough ordering.
-    //
-    // A area we only know one ZIP of gets no confidence at all: one point says
-    // nothing about how large the region is, and 969 is a single Guam ZIP
-    // standing in for islands 120 miles apart.
-    const spreadMiles =
-      area.length === 1
-        ? Number.POSITIVE_INFINITY
-        : area.reduce((worst, r) => Math.max(worst, milesBetween(anchor, r)), 0);
+    if (!row) return null;
 
     return {
-      latitude: anchor.latitude,
-      longitude: anchor.longitude,
-      precision: "zip3" as const,
-      facilityCount: area.reduce((s, r) => s + r.facilityCount, 0),
-      spreadMiles,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      city: row.city,
+      state: row.state,
     };
   },
 });
@@ -396,18 +216,12 @@ export type NearbyFacility = {
 };
 
 export type NearbyResult = {
+  /** Null means the ZIP does not exist, not that nothing was found near it. */
   origin: {
     latitude: number;
     longitude: number;
-    precision: "zip" | "zip3";
-    /** Worst-case miles between this origin and the ZIP that was typed. */
-    spreadMiles: number;
-    /**
-     * Whether the origin is close enough to the typed ZIP for the distances
-     * below to mean anything, and for an empty list to mean "nothing near you"
-     * rather than "we were looking in the wrong place".
-     */
-    approximate: boolean;
+    city: string;
+    state: string;
   } | null;
   facilities: NearbyFacility[];
 };
@@ -447,9 +261,8 @@ export const facilitiesNearZip = query({
       v.object({
         latitude: v.number(),
         longitude: v.number(),
-        precision: v.union(v.literal("zip"), v.literal("zip3")),
-        spreadMiles: v.number(),
-        approximate: v.boolean(),
+        city: v.string(),
+        state: v.string(),
       }),
     ),
     facilities: v.array(nearbyRow),
@@ -464,20 +277,6 @@ export const facilitiesNearZip = query({
     );
     if (!origin) return { origin: null, facilities: [] };
 
-    // When the origin is the centre of a sprawling three-digit area, measuring
-    // the family's radius from it hides real facilities: searching 25 miles
-    // around Kenai finds nothing, while four certified homes sit five miles
-    // from the Anchorage ZIP that was actually typed. So the sweep is widened
-    // by however far off the origin could be. Nothing is filtered back out
-    // afterwards — a family being shown a home that turns out to be too far is
-    // a nuisance, and a family never being shown one is the failure this
-    // product exists to prevent (CLAUDE.md section 4).
-    const approximate = origin.spreadMiles > ZIP3_TRUSTED_SPREAD_MILES;
-    // Capped before it leaves the backend: the bound can be an unknown-sized
-    // area, and neither the sweep nor a sentence in the UI can carry infinity.
-    const spreadMiles = Math.min(origin.spreadMiles, 150);
-    const sweep = Math.min(150, radius + (approximate ? spreadMiles : 0));
-
     // The S2 index does the geometry. It returns the nearest keys already
     // ordered and already bounded by distance, so nothing here reads a row it
     // is not going to return — which is the difference between this and
@@ -487,7 +286,7 @@ export const facilitiesNearZip = query({
       ctx,
       { latitude: origin.latitude, longitude: origin.longitude },
       want,
-      sweep * METRES_PER_MILE,
+      radius * METRES_PER_MILE,
     );
 
     const facilities: NearbyFacility[] = [];
@@ -517,9 +316,8 @@ export const facilitiesNearZip = query({
       origin: {
         latitude: origin.latitude,
         longitude: origin.longitude,
-        precision: origin.precision,
-        spreadMiles,
-        approximate,
+        city: origin.city,
+        state: origin.state,
       },
       facilities,
     };

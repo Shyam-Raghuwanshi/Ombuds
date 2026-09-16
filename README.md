@@ -85,6 +85,7 @@ Anonymous sign-in means an identity costs nothing, so every entry point that spe
 ## Data and provenance
 
 - Federal data comes from the **CMS Provider Data Catalog**: Provider Information, Health Deficiencies (loaded per facility, never in bulk) and the Citation Code Look-up. It is refreshed monthly by cron.
+- ZIP code locations come from the **GeoNames postal-code export** ([download.geonames.org/export/zip](https://download.geonames.org/export/zip/)), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and trimmed to `data/us-zip-locations.csv` — 41,705 ZIPs, merged from the US file plus the separate Puerto Rico, Virgin Islands, Guam, Northern Mariana and American Samoa files. CMS places every facility but says nothing about where a ZIP is, and deriving that from the facilities themselves put three quarters of US ZIPs a median of 20.8 miles from their real location.
 - Every federal figure shows its inspection date. Every emailed answer is labelled as reported by the facility, with the time it arrived. Model-written text names the model that wrote it.
 - Red is used for one thing only: a finding that a resident was harmed or placed in immediate jeopardy.
 - Ombuds reports public records and relays what facilities say. It is not medical, legal or financial advice.
@@ -103,6 +104,7 @@ npx convex dev              # creates a dev deployment and writes .env.local
 Set the deployment's environment variables with `npx convex env set <NAME> <value>`. The names and what each one does are in [`.env.example`](.env.example). Demo mode is on and real sends are off unless you change them.
 
 ```bash
+npm run seed:zips           # ZIP gazetteer, 41,488 rows; run once per deployment
 npm run seed:demo           # CMS tag catalog + three sample facilities; no model calls
 npm run dev                 # Vite + convex dev
 ```
@@ -118,6 +120,7 @@ convex/            backend: schema, functions, crons, HTTP routes, components
 convex/ai/         the only place a model is named; prompts and zod schemas
 convex/lib/        pure helpers: severity grid, contact discovery, send guard, personas
 src/               React + Vite + Tailwind frontend
+data/              the ZIP gazetteer (GeoNames, CC BY 4.0)
 fixtures/          golden translations for diffing a model change
 patches/           a patch to @agentmail/convex 0.1.0 (env contract, exposed inbox calls)
 ```
