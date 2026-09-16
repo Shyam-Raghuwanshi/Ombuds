@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-14T17:31:05Z
+- **Last updated:** 2026-09-16T10:12:00Z
 
 ## Log
 
@@ -700,3 +700,26 @@ longer relabels a facility that still has the address it was found with
 (`convex/enrichment.ts`), and the contact panel's description list passes axe.
 Checked at 375px and 1280px in light and dark with no overflow, no axe
 violations and no console errors.
+
+### 2026-09-16 - d15ab41
+A single failed HTTP call to AgentMail used to end a conversation permanently.
+The send worker caught the error, marked the row bounced, and the seeded reply —
+scheduled only after a successful send — never came. On a judge's screen that is
+a dead row explained by a claim about the facility's address rather than about
+us. Sends are now retried by the pool (three attempts, backing off from 1.5s),
+and an onComplete handler decides only once every attempt has failed: a real
+facility gets an honest "we could not deliver this letter", and in demo mode the
+letter is recorded as composed, the persona answers it so the board still fills,
+and the row, the thread and the provenance strip all say AgentMail could not
+accept it (`convex/email.ts`, `src/board.ts`). Convex features: workpool retries
+with an onComplete callback.
+
+Tested by forcing it. `OMBUDS_SIMULATE_SEND_FAILURE` refuses every send, and a
+full campaign was run on the dev deployment with it set: eighteen refused sends
+across six facilities, not one row bounced, six letters recorded, every persona
+replied, two conversations still reached round two, and the bounce persona
+stayed distinct from the failures. Production was then verified with a real
+campaign: a dedicated inbox, seven real sends, all delivered, none recorded
+locally, round two at 68 seconds, settled at 118, $0.082 in model calls.
+AgentMail also raised this organisation's daily send limit from 100 to 1,000,
+which is about 140 judge sessions a day rather than 14.
