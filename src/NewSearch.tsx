@@ -189,7 +189,7 @@ export default function NewSearch({
                 return (
                   <label
                     key={c.value}
-                    className={`cursor-pointer rounded-md border p-3 hover:border-rule-strong ${
+                    className={`flex cursor-pointer gap-3 rounded-md border p-3 hover:border-rule-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-focus ${
                       active ? "border-rule-strong bg-sunk" : "border-rule"
                     }`}
                   >
@@ -201,10 +201,24 @@ export default function NewSearch({
                       onChange={() => setCareLevel(c.value)}
                       className="sr-only"
                     />
-                    <span className={`block ${active ? "t-name" : "t-body"}`}>
-                      {c.label}
+                    {/* The real radio is hidden, so the choice has to be drawn.
+                        Without it the only difference between chosen and not was
+                        the weight of the label, which on a dark screen reads as
+                        three disabled options and one live one. */}
+                    <span
+                      aria-hidden
+                      className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${
+                        active
+                          ? "border-ink bg-ink ring-2 ring-inset ring-paper"
+                          : "border-rule-strong"
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      {/* One weight for all four. A family has to be able to read
+                          the option they have not chosen yet. */}
+                      <span className="t-name block">{c.label}</span>
+                      <span className="t-meta mt-1 block">{c.hint}</span>
                     </span>
-                    <span className="t-meta mt-1 block">{c.hint}</span>
                   </label>
                 );
               })}
@@ -260,10 +274,10 @@ export default function NewSearch({
                 return (
                   <label
                     key={m}
-                    className={`t-body cursor-pointer rounded-full border px-3 py-1.5 ${
+                    className={`t-body cursor-pointer rounded-full border px-3 py-1.5 has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-focus ${
                       active
                         ? "border-rule-strong bg-sunk font-semibold"
-                        : "border-rule text-muted hover:border-rule-strong"
+                        : "border-rule hover:border-rule-strong"
                     }`}
                   >
                     <input
@@ -272,6 +286,11 @@ export default function NewSearch({
                       onChange={() => toggleMustHave(m)}
                       className="sr-only"
                     />
+                    {/* A tick, not grey text: an option they have not picked is
+                        still an option, and muting it says otherwise. */}
+                    <span aria-hidden className="t-code mr-1.5">
+                      {active ? "✓" : "+"}
+                    </span>
                     {m}
                   </label>
                 );
