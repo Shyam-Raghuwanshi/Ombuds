@@ -74,6 +74,7 @@ function CampaignProgress({
   replied,
   shortlisted,
   unreachable,
+  bounced,
 }: {
   replied: number;
   shortlisted: number;
@@ -85,16 +86,21 @@ function CampaignProgress({
    * demo by announcing that all twelve facilities are unreachable.
    */
   unreachable: number;
+  /**
+   * Facilities whose address rejected the letter. They were written to, so
+   * they are not "unreachable", but they can never answer either.
+   */
+  bounced: number;
 }) {
   if (shortlisted === 0) return null;
 
-  // Denominated on the facilities we can write to at all, which is a fixed
-  // number for the life of the campaign. A facility with no published address
-  // can never reply, so leaving it in the denominator would hold the bar
-  // permanently short of the end and report a finished campaign as an
-  // unfinished one. They are named underneath instead of being folded into a
-  // figure that makes the campaign look worse than it went.
-  const reachable = Math.max(0, shortlisted - unreachable);
+  // Denominated on the facilities that can actually answer. A facility with no
+  // published address was never written to, and a facility whose address
+  // rejected the letter can no longer reply — counting either one holds the bar
+  // permanently short of the end and reports a finished campaign as an
+  // unfinished one. Both are named underneath instead, rather than folded into
+  // a figure that makes the campaign look worse than it went.
+  const reachable = Math.max(0, shortlisted - unreachable - bounced);
   const pct = reachable > 0 ? Math.min(100, (replied / reachable) * 100) : 0;
   const outstanding = Math.max(0, reachable - replied);
 
@@ -103,13 +109,14 @@ function CampaignProgress({
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="t-body tabular-nums">
           <span className="font-bold">{replied}</span> of the {reachable}{" "}
-          facilities we can write to {replied === 1 ? "has" : "have"} answered
+          {reachable === 1 ? "facility" : "facilities"} that can answer{" "}
+          {replied === 1 ? "has" : "have"} answered
         </p>
         <p className="t-meta">
           {outstanding > 0
             ? `${outstanding} still to answer — replies land here as they arrive, nothing to refresh`
             : reachable > 0
-              ? "Every facility we could reach has answered"
+              ? "Every facility that could answer has"
               : "Letters are still going out"}
         </p>
       </div>
@@ -126,6 +133,15 @@ function CampaignProgress({
           style={{ width: `${pct}%` }}
         />
       </div>
+      {bounced > 0 && (
+        <p className="t-meta measure mt-2">
+          {bounced} {bounced === 1 ? "address" : "addresses"} published on a
+          facility's own website rejected our letter.{" "}
+          {bounced === 1 ? "That facility stays" : "Those facilities stay"} on
+          the board below with the full inspection record and a phone number.
+        </p>
+      )}
+
       {unreachable > 0 && (
         <p className="t-meta measure mt-2">
           {unreachable}{" "}
@@ -638,6 +654,7 @@ export function Board({
         replied={counters.replied}
         shortlisted={counters.shortlisted}
         unreachable={rows.filter((r) => r.noEmailFound).length}
+        bounced={counters.bounced}
       />
 
       <ExportBoard searchId={searchId} />
