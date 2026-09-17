@@ -177,13 +177,6 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_ccn", ["ccn"]),
 
-  penalties: defineTable({
-    ccn: v.string(),
-    date: v.number(),
-    type: v.string(),
-    fineAmount: v.number(),
-  }).index("by_ccn", ["ccn"]),
-
   // Firecrawl search over recent local press.
   //
   // This table exists because of a timing gap, not a data gap. A state survey
