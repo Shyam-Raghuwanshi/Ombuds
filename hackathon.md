@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-5-mini, gpt-5. Routed per task in `convex/ai/provider.ts`, the only file that names a model
 - **Started:** 2026-08-27T14:32:17Z
-- **Last updated:** 2026-09-16T17:33:34Z
+- **Last updated:** 2026-09-17T19:14:18Z
 
 ## Log
 
@@ -800,3 +800,28 @@ their facilities stay reachable from the live ZIP that replaced them because the
 spatial index keys on coordinates rather than ZIPs — CARE ONE AT BROOKLINE shows
 at 1.1mi from 02445. Known gap: GeoNames omits PO-box-only ZIPs such as 91799,
 which are refused.
+
+### 2026-09-17 - 2dbf9e3
+Four things a stranger would have met first. The progress line kept a bounced
+address in "facilities we can write to", so a finished campaign read "1 still to
+answer" forever; a bounce now leaves the denominator and is reported in its own
+sentence, the way facilities with no published address already were
+(`src/Board.tsx`). The four care levels were told apart only by the weight of
+their labels, which on a dark screen reads as one live option and three
+disabled ones — every option now carries the same weight and a drawn radio
+control, and both it and the must-have chips show a focus ring
+(`src/NewSearch.tsx`). The `penalties` table held nothing and was read by
+nothing: fines reach the facility page from the Provider Information columns CMS
+already computes, so it is gone from the schema (`convex/schema.ts`).
+
+The local-news section said only that nothing was found, which is
+indistinguishable from a search that never ran. It now reports what was actually
+done: "We searched the local press for the past year and reviewed 10 results.
+None of them was confirmed to be about this exact facility, so none is shown."
+Every scan records the number it judged (`convex/news.ts`, `src/NewsPanel.tsx`).
+All fourteen facilities in the demo region were scanned live: ten to twelve
+results each, none publishable. A search for the worst of them returns a
+bankruptcy PDF, social posts about other facilities, and law-firm pages written
+to rank for "<facility> lawsuit" — two of those domains joined the exclude list.
+That is the triage working, not an empty feature: what exists for these homes is
+advertising, and advertising is not reporting.
