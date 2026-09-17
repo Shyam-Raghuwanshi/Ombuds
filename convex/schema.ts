@@ -107,6 +107,11 @@ export default defineSchema({
     ),
     enrichedAt: v.optional(v.number()),
     newsScannedAt: v.optional(v.number()),
+    // How many search results the last scan judged. Kept so a facility with
+    // no publishable coverage can say what was actually done — "we reviewed
+    // twelve results and none were about this home" is a finding; a blank
+    // section is indistinguishable from a feature that never ran.
+    newsResultsReviewed: v.optional(v.number()),
     lastCmsSync: v.number(),
   })
     .index("by_ccn", ["ccn"])

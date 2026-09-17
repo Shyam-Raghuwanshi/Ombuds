@@ -84,6 +84,11 @@ const NEWS_EXCLUDE_DOMAINS = [
   "reddit.com",
   "pinterest.com",
   "tiktok.com",
+  // Surfaced by a live search for a one-star facility: pages written to rank
+  // for "<facility name> lawsuit" and convert the reader into a client. They
+  // are advertising, not reporting, whatever the headline looks like.
+  "seniorjustice.com",
+  "kbaattorneys.com",
 ];
 
 export const newsScanTarget = internalQuery({
@@ -119,6 +124,8 @@ export const newsScanTarget = internalQuery({
 export const saveNews = internalMutation({
   args: {
     ccn: v.string(),
+    /** How many search results this scan judged, kept or not. */
+    reviewed: v.number(),
     items: v.array(
       v.object({
         title: v.string(),
@@ -133,7 +140,7 @@ export const saveNews = internalMutation({
     ),
   },
   returns: v.number(),
-  handler: async (ctx, { ccn, items }) => {
+  handler: async (ctx, { ccn, reviewed, items }) => {
     let inserted = 0;
     for (const item of items) {
       // The same story resurfaces on every rescan; the (ccn, url) index is the
@@ -171,7 +178,12 @@ export const saveNews = internalMutation({
       .query("facilities")
       .withIndex("by_ccn", (q) => q.eq("ccn", ccn))
       .unique();
-    if (facility) await ctx.db.patch(facility._id, { newsScannedAt: Date.now() });
+    if (facility) {
+      await ctx.db.patch(facility._id, {
+        newsScannedAt: Date.now(),
+        newsResultsReviewed: reviewed,
+      });
+    }
     return inserted;
   },
 });
@@ -329,7 +341,7 @@ async function runNewsScan(
     }
 
     if (hits.length === 0) {
-      await ctx.runMutation(internal.news.saveNews, { ccn, items: [] });
+      await ctx.runMutation(internal.news.saveNews, { ccn, reviewed: 0, items: [] });
       return { ccn, searched: 0, kept: 0, inserted: 0, skipped: false, error: null };
     }
 
@@ -407,6 +419,7 @@ async function runNewsScan(
 
     const inserted = await ctx.runMutation(internal.news.saveNews, {
       ccn,
+      reviewed: hits.length,
       items: kept,
     });
     return {
@@ -429,6 +442,8 @@ export const facilityNews = query({
   returns: v.object({
     scanned: v.boolean(),
     scannedAt: v.union(v.number(), v.null()),
+    /** Results judged by the last scan — evidence the search actually ran. */
+    reviewed: v.number(),
     items: v.array(
       v.object({
         _id: v.id("facilityNews"),
@@ -468,6 +483,7 @@ export const facilityNews = query({
     return {
       scanned: facility?.newsScannedAt !== undefined,
       scannedAt: facility?.newsScannedAt ?? null,
+      reviewed: facility?.newsResultsReviewed ?? 0,
       items: rows.map((r) => ({
         _id: r._id,
         title: r.title,

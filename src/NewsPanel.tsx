@@ -70,9 +70,16 @@ export function NewsPanel({
         // Deliberately distinct from "we have not looked yet". Finding nothing
         // is a real answer and a family should be able to read it as one.
         <p className="t-body measure mt-3">
-          We searched local news from the past year and found no coverage of
-          this facility.
-          {news.scannedAt ? ` Checked ${fmtDate(news.scannedAt)}.` : ""}
+          We searched the local press for the past year
+          {news.reviewed > 0
+            ? ` and reviewed ${news.reviewed} result${news.reviewed === 1 ? "" : "s"}. None of them was confirmed to be about this exact facility, so none is shown.`
+            : " and found nothing about this facility."}
+          {news.scannedAt ? ` Checked ${fmtDate(news.scannedAt)}.` : ""}{" "}
+          <span className="text-muted">
+            Directory listings, review sites and law-firm pages written to rank
+            for a facility's name are not reporting, and are never published
+            here.
+          </span>
         </p>
       )}
 
